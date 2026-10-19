@@ -1,0 +1,22 @@
+# 元データ（929MB。GitHub には置かない）
+*.duckdb
+*.duckdb.wal
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# エディタ / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# ローカルの作業物
+*.log
+tmp/
+
+# Claude Code のローカル設定
+.claude/

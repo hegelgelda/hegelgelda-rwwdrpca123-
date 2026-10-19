@@ -1,0 +1,99 @@
+# NBA 日程とロスター
+
+2026-27 シーズンの日程と、各チームの在籍選手を表示する静的サイト。
+**依存ライブラリなし**。`fetch` で JSON を読むだけで動く。
+
+## 画面
+
+| URL | 内容 |
+|---|---|
+| `#/` | 日程。日付を前後に動かせる。既定は「今日以降で最初に試合がある日」 |
+| `#/d/2026-10-28` | その日の試合 |
+| `#/teams` | チーム一覧（カンファレンス / ディビジョン別） |
+| `#/team/DEN` | ロスター（前季の平均成績つき） |
+| `#/team/DEN/schedule` | そのチームの全日程 |
+
+## 構成
+
+```
+.
+├── index.html
+├── css/style.css
+├── js/app.js
+├── .nojekyll              ← GitHub Pages で必須
+├── public/data1/          ← ビルド成果物。コミットする
+│   ├── teams.json           3.1 KB   30チーム
+│   ├── schedule.json      173.2 KB   1,200試合
+│   ├── rosters.json       108.8 KB   526選手
+│   └── manifest.json        0.2 KB
+└── tools/                 ← データ生成。サイトの動作には不要
+    ├── build_page1.py       public/data1/ を作り直す
+    ├── build_schedule.py    日程を NBA API から取り直す
+    └── fetch_rosters.py     ロスターを NBA API から取り直す
+```
+
+**サイト本体は 285 KB。** gzip 転送なら 1ページ 15〜40 KB。
+
+## ローカルで見る
+
+`file://` だと `fetch` が CORS で弾かれるので、簡易サーバを立てる。
+
+```bash
+python -m http.server 8731
+# → http://127.0.0.1:8731/
+```
+
+VS Code の Live Server 拡張でもよい。
+
+## GitHub Pages へ出す
+
+1. GitHub Desktop で Publish repository
+2. GitHub → Settings → Pages → Source を `main` / `(root)`
+3. `https://<ユーザー名>.github.io/nba-site/` で見られる
+
+`public/data1/*.json` は生成物だが**コミットする**。
+GitHub Pages にはビルド処理が無いため。
+
+## データの更新
+
+元データの `nba.duckdb`（929MB）は**このリポジトリに入っていない**。
+`tools/` のスクリプトは `--db` で場所を渡すか、環境変数 `NBA_DUCKDB` を使う。
+
+```bash
+# 1. 表示用 JSON を作り直す（DB があればこれだけでよい）
+python tools/build_page1.py
+python tools/build_page1.py --db D:/data/nba.duckdb   # 場所を変えるとき
+
+# 2. 元データごと取り直す（NBA API を叩く。nba_api が要る）
+python tools/build_schedule.py --db C:/nba/nba.duckdb --seasons 2026-27
+python tools/fetch_rosters.py  --db C:/nba/nba.duckdb --season 2026-27
+```
+
+★ **NBA Cup のノックアウト 24 試合は未掲載**（現在 1,200 / 1,230 試合）。
+12月に組分けが終わったら `build_schedule.py` を再実行すると入る。
+
+## 実装メモ
+
+- **試合時刻は ET。** `game_schedule.tip_et` は「ET の壁時計を UTC として
+  格納した値」なので、そのまま読むと実行環境のタイムゾーンでずれる
+  （JST だと開幕戦が 00:00 になる）。
+  `build_page1.py` は `TimeZone='America/New_York'` のうえで **`tip_utc`**
+  を整形している。検算として ET 日付と `game_date` が
+  レギュラー 15,645 件すべて一致することを確認済み。
+- **NaN を JSON に書かない。** pandas の `NaN` は真値なので
+  `if v else None` では落とせず、`json.dump` が不正な `NaN` を書く。
+  `clean()` を通し、`allow_nan=False` で書き出し時に失敗させている。
+- **ロスターの前季成績**は 2025-26 レギュラーシーズンの平均。
+  新人・新規契約は「—」になる（526名中 73名）。
+- **現在籍は `team_roster`。** `player_index` は12シーズンの和集合で、
+  最新でも前季時点。実ロスターと比べると 525名中 196名（37%）ずれる。
+- 日程に**結果は入っていない**。2026-27 はまだ始まっていない。
+
+## 次にやること
+
+- [ ] 試合結果の表示（シーズンが進んでから）
+- [ ] 選手ページ（過去成績。2021-22 以降の試合ログを選手別 JSON で配る）
+- [ ] 順位表
+- [ ] モデルの予測
+      — 先に「ある日付時点のレーティングを保存して未実施試合に当てる」
+      経路が要る（既存の予測データは評価済み試合ぶんしか無い）

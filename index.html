@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>NBA 日程とロスター</title>
+<meta name="description" content="2026-27 シーズンの日程と各チームの在籍選手">
+<link rel="stylesheet" href="./css/style.css">
+</head>
+<body>
+
+<header class="site">
+  <a class="brand" href="#/">NBA <span>2026-27</span></a>
+  <nav>
+    <a href="#/" data-nav="schedule">日程</a>
+    <a href="#/teams" data-nav="teams">チーム</a>
+  </nav>
+</header>
+
+<main id="view" aria-live="polite">
+  <p class="loading">読み込み中…</p>
+</main>
+
+<footer class="site">
+  <p>
+    出典: NBA Stats API（<span id="gen">—</span> 取得）。
+    NBA Cup のノックアウト 24 試合は 12 月に確定するため未掲載。
+  </p>
+</footer>
+
+<script src="./js/app.js"></script>
+</body>
+</html>
