@@ -12,6 +12,15 @@ name: データ更新
 on:
   schedule:
     - cron: '0 10 * * *'
+  # 取得まわりを直したときに、そのまま試せるようにしておく。
+  # ★ このワークフロー自身のコミット（GITHUB_TOKEN）では再実行されない。
+  #   GitHub が GITHUB_TOKEN の push では workflow を起動しないため、
+  #   データ更新のコミットがループすることはない。
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/update-data.yml'
+      - 'tools/**'
   workflow_dispatch:
     inputs:
       season:
