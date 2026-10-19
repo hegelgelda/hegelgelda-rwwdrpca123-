@@ -40,6 +40,16 @@ function shiftDate(d, n) {
 }
 const todayISO = () => new Date().toISOString().slice(0, 10);
 
+/* その日が含まれる週の月曜日。
+   schedule.json の `d` は ET の試合日なので、ここは文字列のまま扱えばよい
+   （実行環境の TZ は関係しない）。getUTCDay は日曜=0 なので月曜起点に直す */
+function monday(d) {
+  const [y, m, dd] = d.split('-').map(Number);
+  const w = new Date(Date.UTC(y, m - 1, dd)).getUTCDay();
+  return shiftDate(d, -((w + 6) % 7));
+}
+const WEEK = (start) => Array.from({ length: 7 }, (_, i) => shiftDate(start, i));
+
 /* 「—」で埋めて桁を揃える */
 const num = (v, dig = 1) => (v === null || v === undefined)
   ? '<span class="dim">—</span>' : Number(v).toFixed(dig);
@@ -86,6 +96,7 @@ async function renderSchedule(dateArg) {
       <input type="date" id="pick" value="${date}" min="${first}" max="${last}">
       <button id="next" ${next ? '' : 'disabled'}>翌日 →</button>
       <button id="open" class="today">開幕日</button>
+      <button id="week">今週 ▾</button>
       <span class="spacer"></span>
       <span class="count">${fmtDate(date)} · ${onDay.length} 試合</span>
     </div>
@@ -97,11 +108,75 @@ async function renderSchedule(dateArg) {
   document.getElementById('prev').onclick = () => go(`#/d/${prev}`);
   document.getElementById('next').onclick = () => go(`#/d/${next}`);
   document.getElementById('open').onclick = () => go(`#/d/${first}`);
+  document.getElementById('week').onclick = () => go(`#/w/${monday(date)}`);
   document.getElementById('pick').onchange = (e) => {
     const v = e.target.value;
     /* 試合の無い日を選んだら、その日以降で最初に試合がある日へ送る */
     go(`#/d/${days.includes(v) ? v : (days.find((d) => d >= v) || last)}`);
   };
+}
+
+/* ------------------------------------------------------------- 日程（週） */
+
+async function renderWeek(dateArg) {
+  const sc = await load('schedule');
+  const games = sc.games;
+  const days = [...new Set(games.map((g) => g.d))].sort();
+  const first = days[0], last = days[days.length - 1];
+
+  /* 既定は今週。シーズン前後で今週に1試合も無ければ、
+     試合のある最寄りの週へ送る（空の枠だけ見せても仕方がない） */
+  let start = monday(dateArg || todayISO());
+  if (!dateArg && !days.some((d) => d >= start && d <= shiftDate(start, 6))) {
+    start = monday(days.find((d) => d >= todayISO()) || last);
+  }
+  if (start < monday(first)) start = monday(first);
+  if (start > monday(last)) start = monday(last);
+
+  const week = WEEK(start);
+  const end = week[6];
+  const inWeek = games.filter((g) => g.d >= start && g.d <= end);
+
+  /* 前週 / 翌週は週単位。試合のある週が先に無ければ押せない */
+  const prev = days.some((d) => d < start) ? shiftDate(start, -7) : null;
+  const next = days.some((d) => d > end) ? shiftDate(start, 7) : null;
+  const thisWeek = monday(todayISO());
+
+  view.innerHTML = `
+    <h1>今週の試合</h1>
+    <p class="sub">
+      ${esc(sc.season)} レギュラーシーズン
+      ${start === thisWeek ? '・<strong>今週</strong>' : ''}
+    </p>
+
+    <div class="datebar">
+      <button id="prev" ${prev ? '' : 'disabled'}>← 前週</button>
+      <button id="now" class="today">今週</button>
+      <button id="next" ${next ? '' : 'disabled'}>翌週 →</button>
+      <button id="day">日別 ▾</button>
+      <span class="spacer"></span>
+      <span class="count">
+        ${fmtDate(start)} 〜 ${fmtDate(end)} · ${inWeek.length} 試合
+      </span>
+    </div>
+
+    <div class="weekgrid">
+      ${week.map((d) => {
+        const gs = inWeek.filter((g) => g.d === d);
+        return `<section class="weekday ${d === todayISO() ? 'is-today' : ''}">
+          <h2><a href="#/d/${d}">${fmtDate(d)}</a>
+            <span class="dim">${gs.length ? `${gs.length} 試合` : '—'}</span>
+          </h2>
+          ${gs.length ? `<div class="games">${gs.map(gameRow).join('')}</div>`
+            : `<p class="empty">試合なし</p>`}
+        </section>`;
+      }).join('')}
+    </div>`;
+
+  document.getElementById('prev').onclick = () => go(`#/w/${prev}`);
+  document.getElementById('next').onclick = () => go(`#/w/${next}`);
+  document.getElementById('now').onclick = () => go(`#/w/${thisWeek}`);
+  document.getElementById('day').onclick = () => go('#/');
 }
 
 function gameRow(g) {
@@ -184,15 +259,25 @@ async function renderTeam(tri, tab) {
 function rosterTable(ps, prev) {
   if (!ps.length) return `<p class="empty">ロスターが無い。</p>`;
   const isNew = (p) => p.acq && /\/26$/.test(p.acq.trim());
+
+  /* 既定は前季 MPG の多い順。出場が無い選手（null）は末尾へ回す。
+     元配列は破壊しない（キャッシュした rosters.json をそのまま持っている） */
+  const sorted = [...ps].sort((a, b) => {
+    if (a.mpg == null && b.mpg == null) return 0;
+    if (a.mpg == null) return 1;
+    if (b.mpg == null) return -1;
+    return b.mpg - a.mpg;
+  });
+
   return `<div class="wrap"><table>
     <thead><tr>
       <th class="n">#</th><th>選手</th><th>Pos</th><th>身長</th>
       <th class="n">体重</th><th class="n">年齢</th><th class="n">年数</th>
       <th class="n">試合</th><th class="n">MPG</th><th class="n">PPG</th>
-      <th class="n">RPG</th><th class="n">APG</th><th>加入</th>
+      <th class="n">RPG</th><th class="n">APG</th>
     </tr></thead>
     <tbody>
-    ${ps.map((p) => `<tr>
+    ${sorted.map((p) => `<tr>
       <td class="n dim">${esc(p.num ?? '')}</td>
       <td><a href="#/p/${esc(p.id)}">${esc(p.name)}</a>
         ${p.tw ? '<span class="badge">TW</span>' : ''}
@@ -207,13 +292,13 @@ function rosterTable(ps, prev) {
       <td class="n">${num(p.ppg)}</td>
       <td class="n">${num(p.rpg)}</td>
       <td class="n">${num(p.apg)}</td>
-      <td class="dim" style="font-size:12px">${esc(p.acq ?? '')}</td>
     </tr>`).join('')}
     </tbody>
   </table></div>
   <p class="sub" style="margin-top:12px">
     試合〜APG は <strong>${esc(prev)}</strong> レギュラーシーズンの平均。
-    「—」は前季に出場が無い選手（新人・新規契約）。
+    <strong>MPG の多い順</strong>に並べている。
+    「—」は前季に出場が無い選手（新人・新規契約）で、末尾にまとめている。
     TW = two-way 等の補足契約。
   </p>`;
 }
@@ -286,8 +371,7 @@ async function renderPlayer(id) {
          p.school].filter(Boolean).map(esc).join(' · ')}
     </p>` : ''}
     ${car ? careerTable(car)
-      : `<p class="empty">2014-15 以降の出場記録が無い。</p>`}
-    ${p && p.acq ? `<p class="sub">加入: ${esc(p.acq)}</p>` : ''}`;
+      : `<p class="empty">2014-15 以降の出場記録が無い。</p>`}`;
 }
 
 function careerTable(car) {
@@ -313,12 +397,11 @@ function careerTable(car) {
     <td class="n">${pc(s.ts)}</td>
   </tr>`;
 
-  /* レギュラーが先、プレーオフなどは後ろにまとめる */
+  /* レギュラーが先。プレーオフなどは畳んで下に置く */
   const reg = car.seasons.filter((s) => s.st === 'R');
   const post = car.seasons.filter((s) => s.st !== 'R');
 
-  return `<div class="wrap"><table class="career">
-    <thead><tr>
+  const head = `<thead><tr>
       <th>シーズン</th><th>チーム</th><th class="n">試合</th><th class="n">MP</th>
       <th class="n">FGM</th><th class="n">FGA</th><th class="n">FG%</th>
       <th class="n">3PM</th><th class="n">3PA</th><th class="n">3P%</th>
@@ -327,14 +410,22 @@ function careerTable(car) {
       <th class="n">AST</th><th class="n">STL</th><th class="n">BLK</th>
       <th class="n">TOV</th><th class="n">PF</th><th class="n">PTS</th>
       <th class="n">TS%</th>
-    </tr></thead>
+    </tr></thead>`;
+
+  return `<div class="wrap"><table class="career">
+    ${head}
     <tbody>
       ${reg.map(row).join('')}
       ${car.career ? row(car.career) : ''}
-      ${post.length ? `<tr class="sep"><td colspan="23">ポストシーズン</td></tr>
-        ${post.map(row).join('')}` : ''}
     </tbody>
   </table></div>
+  ${post.length ? `<details class="post">
+    <summary>ポストシーズン（${post.length} シーズン）</summary>
+    <div class="wrap"><table class="career">
+      ${head}
+      <tbody>${post.map(row).join('')}</tbody>
+    </table></div>
+  </details>` : ''}
   <p class="sub" style="margin-top:12px">
     1試合平均。通算はレギュラーシーズンのみ。
     FG% / 3P% / FT% / TS% は<strong>合計から計算</strong>している
@@ -365,6 +456,8 @@ async function route() {
     } else if (parts[0] === 'p' && parts[1]) {
       nav.schedule = ''; nav.teams = 'on';
       await renderPlayer(parts[1]);
+    } else if (parts[0] === 'w') {
+      await renderWeek(parts[1]);
     } else if (parts[0] === 'd' && parts[1]) {
       await renderSchedule(parts[1]);
     } else {

@@ -96,6 +96,19 @@ h2 { font-size: 15px; margin: 28px 0 10px; color: var(--muted);
 }
 .empty { color: var(--muted); padding: 24px 0; }
 
+/* ---------------------------------------------------------- week */
+.weekgrid { display: grid; gap: 4px; }
+.weekday h2 {
+  display: flex; align-items: baseline; gap: 10px;
+  margin: 18px 0 8px; font-size: 14px; color: var(--ink);
+}
+.weekday h2 a { color: var(--ink); }
+.weekday h2 .dim { font-size: 12px; font-weight: 400; }
+.weekday .empty { padding: 4px 0 8px; font-size: 13px; }
+.weekday.is-today h2 { color: var(--accent); }
+.weekday.is-today h2 a { color: var(--accent); }
+.weekday.is-today .game { border-color: var(--accent); }
+
 /* ---------------------------------------------------------- teams */
 .confs { display: grid; grid-template-columns: 1fr 1fr; gap: 24px; }
 .divgrid { display: grid; gap: 6px; }
@@ -123,11 +136,19 @@ tbody tr:hover { background: var(--panel); }
   border-top: 2px solid var(--line); font-weight: 600;
   background: var(--panel);
 }
-.career tr.sep td {
-  color: var(--muted); font-size: 12px; padding-top: 16px;
-  border-bottom: 1px solid var(--line);
+/* ポストシーズンは既定で閉じておく */
+details.post { margin-top: 20px; }
+details.post summary {
+  cursor: pointer; color: var(--accent); font-size: 13px;
+  padding: 7px 14px; background: var(--panel);
+  border: 1px solid var(--line); border-radius: 999px;
+  width: fit-content; list-style: none;
 }
-.career tr.sep:hover td { background: none; }
+details.post summary::-webkit-details-marker { display: none; }
+details.post summary::before { content: '▸ '; }
+details.post[open] summary::before { content: '▾ '; }
+details.post summary:hover { border-color: var(--accent); }
+details.post[open] summary { margin-bottom: 12px; }
 
 .teamhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .teamhead .tri {
