@@ -54,6 +54,15 @@ const WEEK = (start) => Array.from({ length: 7 }, (_, i) => shiftDate(start, i))
 const num = (v, dig = 1) => (v === null || v === undefined)
   ? '<span class="dim">—</span>' : Number(v).toFixed(dig);
 
+/* 日本時間。`tj` は build_page1.py が Asia/Tokyo に落とした時刻、
+   `tjo` は ET の試合日から見た日付のずれ（ET 夜の試合はほぼ翌日になる）。
+   ET→JST は夏時間で +13h / +14h と変わるので、ここでは足し算しない */
+function jst(g) {
+  if (!g.tj) return '';
+  const o = g.tjo || 0;
+  return (o === 1 ? '翌' : o === -1 ? '前' : '') + g.tj;
+}
+
 /* 率は .561 の形で出す（頭の 0 を落とす） */
 const pc = (v) => (v === null || v === undefined)
   ? '<span class="dim">—</span>' : Number(v).toFixed(3).replace(/^0/, '');
@@ -181,7 +190,10 @@ async function renderWeek(dateArg) {
 
 function gameRow(g) {
   return `<div class="game">
-    <div class="tip">${esc(g.t || '')}</div>
+    <div class="tip">
+      <span class="et">${esc(g.t || '')}</span>
+      <span class="jst">${esc(jst(g))}</span>
+    </div>
     <div class="match">
       <a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
       <span class="at">＠</span>
@@ -281,7 +293,7 @@ function rosterTable(ps, prev) {
       <td class="n dim">${esc(p.num ?? '')}</td>
       <td><a href="#/p/${esc(p.id)}">${esc(p.name)}</a>
         ${p.tw ? '<span class="badge">TW</span>' : ''}
-        ${isNew(p) ? '<span class="badge">新加入</span>' : ''}</td>
+        ${isNew(p) ? '<span class="badge new">new</span>' : ''}</td>
       <td class="dim">${esc(p.pos ?? '')}</td>
       <td class="dim">${esc(p.ht ?? '')}</td>
       <td class="n dim">${esc(p.wt ?? '')}</td>
@@ -307,8 +319,8 @@ function teamSchedule(gs, tri) {
   if (!gs.length) return `<p class="empty">日程が無い。</p>`;
   const t = todayISO();
   return `<div class="wrap"><table>
-    <thead><tr><th>日付</th><th class="n">時刻(ET)</th><th>対戦</th>
-      <th>H/A</th><th>会場</th><th>TV</th></tr></thead>
+    <thead><tr><th>日付</th><th class="n">ET</th><th class="n">日本時間</th>
+      <th>対戦</th><th>H/A</th><th>会場</th><th>TV</th></tr></thead>
     <tbody>
     ${gs.map((g) => {
       const home = g.h === tri;
@@ -316,6 +328,7 @@ function teamSchedule(gs, tri) {
       return `<tr${g.d < t ? ' class="dim"' : ''}>
         <td>${fmtDate(g.d)}</td>
         <td class="n dim">${esc(g.t || '')}</td>
+        <td class="n">${esc(jst(g))}</td>
         <td><a href="#/team/${esc(opp)}">${esc(opp)}</a>
             ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}</td>
         <td class="dim">${home ? 'ホーム' : 'アウェイ'}</td>
@@ -371,7 +384,7 @@ async function renderPlayer(id) {
          p.school].filter(Boolean).map(esc).join(' · ')}
     </p>` : ''}
     ${car ? careerTable(car)
-      : `<p class="empty">2014-15 以降の出場記録が無い。</p>`}`;
+      : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}`;
 }
 
 function careerTable(car) {
@@ -381,6 +394,7 @@ function careerTable(car) {
     <td class="dim">${esc(s.teams || '')}
       ${s.st && ST[s.st] ? `<span class="badge">${ST[s.st]}</span>` : ''}</td>
     <td class="n">${s.g}</td>
+    <td class="n">${s.gs ?? '<span class="dim">—</span>'}</td>
     <td class="n">${num(s.mpg)}</td>
     <td class="n">${num(s.fgm)}</td><td class="n">${num(s.fga)}</td>
     <td class="n">${pc(s.fg)}</td>
@@ -402,7 +416,8 @@ function careerTable(car) {
   const post = car.seasons.filter((s) => s.st !== 'R');
 
   const head = `<thead><tr>
-      <th>シーズン</th><th>チーム</th><th class="n">試合</th><th class="n">MP</th>
+      <th>シーズン</th><th>チーム</th><th class="n">試合</th>
+      <th class="n">先発</th><th class="n">MP</th>
       <th class="n">FGM</th><th class="n">FGA</th><th class="n">FG%</th>
       <th class="n">3PM</th><th class="n">3PA</th><th class="n">3P%</th>
       <th class="n">FTM</th><th class="n">FTA</th><th class="n">FT%</th>
@@ -427,11 +442,10 @@ function careerTable(car) {
     </table></div>
   </details>` : ''}
   <p class="sub" style="margin-top:12px">
-    1試合平均。通算はレギュラーシーズンのみ。
+    試合・先発以外は1試合平均。通算はレギュラーシーズンのみ。
     FG% / 3P% / FT% / TS% は<strong>合計から計算</strong>している
     （試合ごとの率の平均ではない）。
-    元データは <strong>${esc(car.first)}</strong> 以降しか無いので、
-    それより前のシーズンは出ない。
+    <strong>${esc(car.first)}</strong> 以降のシーズンのみ。
   </p>`;
 }
 
@@ -475,9 +489,3 @@ async function route() {
 
 window.addEventListener('hashchange', route);
 route();
-
-/* 取得日をフッタに出す */
-load('manifest').then((m) => {
-  document.getElementById('gen').textContent =
-    (m.generated_at || '').slice(0, 10);
-}).catch(() => {});

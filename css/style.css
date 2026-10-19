@@ -73,12 +73,15 @@ h2 { font-size: 15px; margin: 28px 0 10px; color: var(--muted);
 /* ---------------------------------------------------------- games */
 .games { display: grid; gap: 8px; }
 .game {
-  display: grid; grid-template-columns: 62px 1fr auto;
+  display: grid; grid-template-columns: 74px 1fr auto;
   gap: 12px; align-items: center;
   background: var(--panel); border: 1px solid var(--line);
   border-radius: var(--radius); padding: 10px 14px;
 }
-.game .tip { font-family: var(--mono); color: var(--muted); font-size: 13px; }
+/* 時刻は ET を上、日本時間を下に積む */
+.game .tip { font-family: var(--mono); display: flex; flex-direction: column; }
+.game .tip .et { color: var(--muted); font-size: 13px; }
+.game .tip .jst { color: var(--ink); font-size: 12px; }
 .game .match { font-weight: 600; }
 .game .match .at { color: var(--muted); font-weight: 400; margin: 0 6px; }
 .game .meta { color: var(--muted); font-size: 12px; text-align: right; }
@@ -87,6 +90,12 @@ h2 { font-size: 15px; margin: 28px 0 10px; color: var(--muted);
   display: inline-block; font-size: 11px; padding: 1px 6px;
   border-radius: 999px; background: var(--accent-soft);
   color: var(--accent); margin-left: 6px; vertical-align: 1px;
+}
+/* 新加入は目立たせる。他のバッジ（TW など）とは別扱い */
+.badge.new {
+  background: var(--accent); color: #04060c;
+  font-weight: 700; text-transform: uppercase;
+  letter-spacing: .04em;
 }
 .empty { color: var(--muted); padding: 24px 0; }
 
@@ -160,7 +169,7 @@ details.post[open] summary { margin-bottom: 12px; }
 
 @media (max-width: 720px) {
   .confs { grid-template-columns: 1fr; }
-  .game { grid-template-columns: 54px 1fr; }
+  .game { grid-template-columns: 68px 1fr; }
   .game .meta { grid-column: 2; text-align: left; }
   th, td { padding: 6px 5px; }
 }

@@ -87,10 +87,17 @@ def main() -> None:
     tot += write(a.out, "teams.json", t.to_dict("records"))
 
     # ---------------------------------------------------------- schedule
+    # ★ 日本時間も一緒に出す。
+    #   ET→JST は +13h(EDT) と +14h(EST) で切り替わるので、
+    #   ブラウザ側で足し算せず、ここで tip_utc を Asia/Tokyo に落として渡す。
+    #   `tjo` は ET の試合日から見た JST の日付のずれ（ほぼ常に +1）。
     s = con.execute(q(f"""
         select game_id,
                strftime(game_date, '%Y-%m-%d') as d,
                strftime(tip_utc, '%H:%M')      as t,
+               strftime(tip_utc AT TIME ZONE 'Asia/Tokyo', '%H:%M') as tj,
+               datediff('day', game_date,
+                        (tip_utc AT TIME ZONE 'Asia/Tokyo')::date)  as tjo,
                away_tri as a, home_tri as h,
                arena_name as arena, arena_city as city,
                national_tv as tv, game_label as label,

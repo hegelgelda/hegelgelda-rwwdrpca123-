@@ -31,8 +31,9 @@ if not os.path.exists(DEFAULT_DB):
 DEFAULT_OUT = os.path.join(REPO, "public", "data1")
 
 SEASON = "2026-27"
-# player_game_base が持っている最も古いシーズン。選手ページに注記として出す
-FIRST = "2014-15"
+# 選手ページに出す最も古いシーズン。注記としても表示する。
+# DB は 2014-15 から持っているが、ここより前は出さない
+FIRST = "2021-22"
 
 
 def q(s: str) -> str:
@@ -76,7 +77,10 @@ def main() -> None:
     ).fetchall()]
     print(f"対象 {len(ids):,} 名 → {pdir}\n")
 
-    # シーズン × 種別で集計。出場した試合だけ（min is not null）
+    # シーズン × 種別で集計。出場した試合だけ（min is not null）。
+    # 先発は panel_start。2021-22 以降は欠けが無いのを確認済み。
+    # ★ SQL 内に -- コメントを書かないこと。q() が改行を潰すので、
+    #   以降のクエリ全体がコメント扱いになって消える。
     rows = con.execute(q(f"""
         select player_id,
                any_value(player_name)                       as name,
@@ -84,6 +88,7 @@ def main() -> None:
                season_type                                  as st,
                string_agg(distinct team_abbreviation, '/')  as teams,
                count(*)                                     as g,
+               sum(coalesce(st.started, 0))                 as gs,
                sum(split_part(min_sec,':',1)::double
                    + split_part(min_sec,':',2)::double/60)  as mp,
                sum(fgm) as fgm, sum(fga) as fga,
@@ -93,9 +98,11 @@ def main() -> None:
                sum(ast) as ast, sum(stl) as stl, sum(blk) as blk,
                sum(tov) as tov, sum(pf) as pf, sum(pts) as pts,
                sum(plus_minus) as pm
-        from player_game_base
-        where min is not null
-          and player_id in ({','.join(str(i) for i in ids)})
+        from player_game_base b
+        left join panel_start st using (game_id, player_id)
+        where b.min is not null
+          and b.season_year >= '{FIRST}'
+          and b.player_id in ({','.join(str(i) for i in ids)})
         group by player_id, season_year, season_type
         order by player_id, season_year, season_type
     """)).fetchdf()
@@ -107,6 +114,7 @@ def main() -> None:
         return {
             "y": y, "st": st, "teams": teams, "label": label,
             "g": g,
+            "gs": int(d["gs"]),
             "mpg": r1(d["mp"] / g),
             "fgm": per("fgm"), "fga": per("fga"),
             "fg": pct(d["fgm"], d["fga"]),
@@ -122,7 +130,7 @@ def main() -> None:
             "ts": pct(d["pts"], 2 * (d["fga"] + 0.44 * d["fta"])),
         }
 
-    SUMS = ["g", "mp", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "oreb",
+    SUMS = ["g", "gs", "mp", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "oreb",
             "dreb", "reb", "ast", "stl", "blk", "tov", "pf", "pts", "pm"]
 
     n_file = n_byte = 0
