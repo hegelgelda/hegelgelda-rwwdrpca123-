@@ -10,13 +10,17 @@
  */
 
 const DATA = './public/data1';
+/* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
+   これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
+   邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
+const DATA_V = '35d9af24';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
 const cache = {};
 async function load(name) {
   if (cache[name]) return cache[name];
-  const res = await fetch(`${DATA}/${name}.json`);
+  const res = await fetch(`${DATA}/${name}.json?v=${DATA_V}`);
   if (!res.ok) throw new Error(`${name}.json が読めない (${res.status})`);
   cache[name] = await res.json();
   return cache[name];

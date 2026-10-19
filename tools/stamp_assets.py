@@ -30,6 +30,8 @@ PAGE = os.path.join(REPO, "index.html")
 
 # index.html が参照している、ハッシュを付けたいファイル
 ASSETS = ["css/style.css", "js/app.js"]
+# app.js が fetch するデータ。まとめて1つのハッシュにし、js に埋める
+DATA_DIR = os.path.join(REPO, "public", "data1")
 
 
 def digest(path: str) -> str:
@@ -39,14 +41,55 @@ def digest(path: str) -> str:
     return hashlib.sha1(body).hexdigest()[:8]
 
 
+def data_digest() -> str:
+    """public/data1/ 全体のハッシュ。
+
+    JSON にもバージョンを付けないと、データを作り直しても
+    GitHub Pages の 10 分キャッシュで古いものが使われ続ける。
+    実際それで「日本時間の列だけ出ない」状態になった。
+    """
+    h = hashlib.sha1()
+    for root, dirs, files in os.walk(DATA_DIR):
+        dirs.sort()
+        for name in sorted(files):
+            p = os.path.join(root, name)
+            h.update(os.path.relpath(p, DATA_DIR).replace(os.sep, "/").encode())
+            with open(p, "rb") as f:
+                h.update(f.read())
+    return h.hexdigest()[:8]
+
+
+def stamp_data(check: bool) -> tuple[bool, str]:
+    """js/app.js の DATA_V を書き換える。返り値は (変わったか, 説明)"""
+    p = os.path.join(REPO, "js", "app.js")
+    src = io.open(p, encoding="utf-8").read()
+    v = data_digest()
+    pat = re.compile(r"(const DATA_V = ')([0-9a-z]+)(')")
+    hit = pat.search(src)
+    if not hit:
+        print("  ! js/app.js に DATA_V が無い")
+        sys.exit(1)
+    if hit.group(2) == v:
+        return False, ""
+    if not check:
+        io.open(p, "w", encoding="utf-8", newline="\n").write(
+            pat.sub(lambda m: m.group(1) + v + m.group(3), src, count=1))
+    return True, f"public/data1/  {hit.group(2)} → {v}"
+
+
 def main() -> int:
     ap = argparse.ArgumentParser()
     ap.add_argument("--check", action="store_true",
                     help="書き換えずに、ずれていたら 1 を返す")
     a = ap.parse_args()
 
+    # ★ データ → app.js → index.html の順。
+    #   DATA_V を書き換えると app.js のハッシュも変わるので、先にやる。
+    moved, note = stamp_data(a.check)
+    changed = [note] if moved else []
+
     html = io.open(PAGE, encoding="utf-8").read()
-    out, changed = html, []
+    out = html
 
     for rel in ASSETS:
         p = os.path.join(REPO, rel.replace("/", os.sep))
