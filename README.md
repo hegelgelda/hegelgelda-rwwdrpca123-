@@ -34,6 +34,7 @@
 └── tools/                 ← データ生成。サイトの動作には不要
     ├── build_page1.py       public/data1/ を作り直す
     ├── build_players.py     選手別の成績 JSON を作り直す
+    ├── stamp_assets.py      index.html の css/js に ?v=ハッシュ を付ける
     ├── build_schedule.py    日程を NBA API から取り直す
     └── fetch_rosters.py     ロスターを NBA API から取り直す
 ```
@@ -61,6 +62,23 @@ VS Code の Live Server 拡張でもよい。
 
 `public/data1/*.json` は生成物だが**コミットする**。
 GitHub Pages にはビルド処理が無いため。
+
+## css / js を直したとき
+
+GitHub Pages は静的ファイルを `max-age=600` で返すので、直しても
+訪問済みのブラウザには最大10分届かない。参照 URL にハッシュを付けて
+別ファイル扱いにさせる。**コミットの前に走らせる。**
+
+```bash
+python tools/stamp_assets.py          # index.html を書き換える
+python tools/stamp_assets.py --check  # ずれていたら終了コード 1
+```
+
+中身が変わらなければハッシュも変わらないので、何度走らせても害はない。
+
+★ ただし `index.html` 自身も10分キャッシュされる。
+新しいハッシュが読まれるまでは最大10分かかり、そこは消せない。
+消えるのは「css だけ新しくて js が古い」というズレのほう。
 
 ## データの更新
 
