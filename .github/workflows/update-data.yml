@@ -43,6 +43,11 @@ jobs:
       - name: 依存を入れる
         run: pip install duckdb pandas numpy nba_api
 
+      # ログは未サインインでは読めないので、疎通の結果は注釈に出す。
+      # 届かないならここで止める（以降のステップを無駄に走らせない）
+      - name: NBA API に届くか確かめる
+        run: python tools/probe_nba_api.py
+
       - name: 空の DB を用意する
         run: python tools/seed_ci_db.py --db ci.duckdb
 
