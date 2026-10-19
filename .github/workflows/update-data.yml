@@ -19,15 +19,17 @@ on:
   # schedule:
   #   - cron: '0 10 * * *'
 
-  # 取得まわりを直したときに、そのまま試せるようにしておく。
-  # ★ このワークフロー自身のコミット（GITHUB_TOKEN）では再実行されない。
-  #   GitHub が GITHUB_TOKEN の push では workflow を起動しないため、
-  #   データ更新のコミットがループすることはない。
-  push:
-    branches: [main]
-    paths:
-      - '.github/workflows/update-data.yml'
-      - 'tools/**'
+  # push での自動起動も外してある。経路が塞がったままなので、
+  # tools/ を触るたびに失敗するだけになるため。
+  # 経路の目処が立ったら、下を戻して push で試せる。
+  # push:
+  #   branches: [main]
+  #   paths:
+  #     - '.github/workflows/update-data.yml'
+  #     - 'tools/**'
+
+  # 手動実行だけ残す。Actions タブ →「データ更新」→ Run workflow。
+  # ★ Re-run jobs は古いコミットの再生なので、直した内容は反映されない。
   workflow_dispatch:
     inputs:
       season:
