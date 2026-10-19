@@ -10,8 +10,15 @@ name: データ更新
 #   929MB の nba.duckdb にしか無い。ローカルで作り直してコミットする。
 
 on:
-  schedule:
-    - cron: '0 10 * * *'
+  # ★ 日次実行は止めてある。
+  #   GitHub のランナーからは stats.nba.com が応答しないため
+  #   （run#2: ReadTimeout 30秒。接続はできるが返事が来ない＝IP で弾かれている）。
+  #   そのままにすると毎日失敗してメールが飛ぶだけなので cron を外した。
+  #   セルフホストランナー（自分の PC）を使うなら、
+  #   runs-on を self-hosted に変えたうえで下を戻す。
+  # schedule:
+  #   - cron: '0 10 * * *'
+
   # 取得まわりを直したときに、そのまま試せるようにしておく。
   # ★ このワークフロー自身のコミット（GITHUB_TOKEN）では再実行されない。
   #   GitHub が GITHUB_TOKEN の push では workflow を起動しないため、

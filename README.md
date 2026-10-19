@@ -91,9 +91,22 @@ JSON の fetch URL に付く。**データを作り直したときも走らせ�
 
 ## 自動更新（GitHub Actions）
 
-`.github/workflows/update-data.yml` が**毎日 19:00 JST** に日程とロスターを
-取り直してコミットする。**手動実行**は GitHub の Actions タブ →
-「データ更新」→ **Run workflow** ボタン。
+★ **GitHub のランナーからは NBA API に届かない。日次実行は止めてある。**
+
+`stats.nba.com` は接続はできるが応答を返さない（`ReadTimeout`、30秒）。
+クラウドの IP を弾いているとみられる。同じコードが手元の PC からは
+3.8 秒で 1,274 行を取れるので、コードではなく経路の問題。
+
+    run#2  NBA API に届かない: ReadTimeout:
+           HTTPSConnectionPool(host='stats.nba.com', port=443):
+           Read timed out. (read timeout=30)
+
+ワークフロー自体は残してある（`tools/**` を直して push すると走る）。
+**セルフホストランナー**（自分の PC に runner を入れる）なら自宅の IP で
+出ていくので動く。その場合は `runs-on: self-hosted` にして cron を戻す。
+
+`tools/probe_nba_api.py` は届くかどうかだけを試し、結果を注釈に出す。
+Actions のログは未サインインでは読めないので、切り分けはこれを見る。
 
 更新されるのは次の3つだけ。
 
