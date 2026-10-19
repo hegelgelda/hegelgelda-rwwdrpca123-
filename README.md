@@ -97,6 +97,12 @@ python tools/fetch_rosters.py  --db C:/nba/nba.duckdb --season 2026-27
 - **現在籍は `team_roster`。** `player_index` は12シーズンの和集合で、
   最新でも前季時点。実ロスターと比べると 525名中 196名（37%）ずれる。
 - 日程に**結果は入っていない**。2026-27 はまだ始まっていない。
+- **配色は Hyperliquid 準拠。** 地 `#0f1a1e` / パネル `#0f1a1f` /
+  境界 `#273035` / 本文 `#f6fefd` / ミント `#50d2c1`。
+  向こうが常時ダークなので `prefers-color-scheme` での切り替えはやめ、
+  `color-scheme: dark` を宣言している（`<input type=date>` 等も暗くなる）。
+  地とパネルがほぼ同色でカードは境界線で見せるため、
+  行のホバーだけ `--hover` を別に持っている。
 - **週の区切りは月曜〜日曜（ET）。** `schedule.json` の `d` は ET の試合日
   なので、週の計算は文字列のままやれば実行環境の TZ に左右されない。
   `getUTCDay()` は日曜=0 なので `(w + 6) % 7` で月曜起点に直している。

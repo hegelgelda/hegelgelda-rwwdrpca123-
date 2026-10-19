@@ -1,26 +1,20 @@
+/* 配色は Hyperliquid (app.hyperliquid.xyz/trade) に合わせた。
+   向こうは常時ダークなので、こちらも OS の設定で切り替えない。
+   --bg と --panel はほぼ同色で、カードは境界線で見せる。
+   行のホバーだけ別の色を使う（--panel では見えないため） */
 :root {
-  --bg: #ffffff;
-  --panel: #f6f7f9;
-  --line: #e3e6ea;
-  --ink: #16191d;
-  --muted: #6b7280;
-  --accent: #1d4ed8;
-  --accent-soft: #eef2ff;
-  --warn: #b45309;
+  color-scheme: dark;
+  --bg: #0f1a1e;          /* ページ地            rgb(15,26,30) */
+  --panel: #0f1a1f;       /* パネル              rgb(15,26,31) */
+  --hover: #16232a;       /* 行のホバー（独自）  */
+  --line: #273035;        /* 境界線              rgb(39,48,53) */
+  --ink: #f6fefd;         /* 本文                rgb(246,254,253) */
+  --muted: #949e9c;       /* 補足                rgb(148,158,156) */
+  --accent: #50d2c1;      /* ミント              rgb(80,210,193) */
+  --accent-soft: rgba(80, 210, 193, .12);
+  --warn: #ed7088;        /* 向こうの下落色      rgb(237,112,136) */
   --radius: 10px;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
-}
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0f1115;
-    --panel: #171a20;
-    --line: #272c35;
-    --ink: #e7eaee;
-    --muted: #99a1ad;
-    --accent: #7aa2ff;
-    --accent-soft: #1b2440;
-    --warn: #f0b429;
-  }
 }
 
 * { box-sizing: border-box; }
@@ -125,7 +119,7 @@ th, td { padding: 7px 8px; text-align: left; border-bottom: 1px solid var(--line
 th { color: var(--muted); font-weight: 600; font-size: 12px;
      text-transform: uppercase; letter-spacing: .03em; white-space: nowrap; }
 td.n, th.n { text-align: right; font-family: var(--mono); }
-tbody tr:hover { background: var(--panel); }
+tbody tr:hover { background: var(--hover); }
 .dim { color: var(--muted); }
 .wrap { overflow-x: auto; }
 
@@ -134,7 +128,7 @@ tbody tr:hover { background: var(--panel); }
 .career td, .career th { padding: 6px 7px; }
 .career tr.total td {
   border-top: 2px solid var(--line); font-weight: 600;
-  background: var(--panel);
+  background: var(--hover);
 }
 /* ポストシーズンは既定で閉じておく */
 details.post { margin-top: 20px; }
