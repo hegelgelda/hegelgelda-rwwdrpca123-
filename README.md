@@ -31,10 +31,14 @@
 │   ├── players/             902.5 KB 452ファイル（1人1ファイル）
 │   ├── players_index.json   4.2 KB
 │   └── manifest.json        0.2 KB
+├── .github/workflows/
+│   └── update-data.yml    ← 日次＋手動の自動更新
 └── tools/                 ← データ生成。サイトの動作には不要
     ├── build_page1.py       public/data1/ を作り直す
     ├── build_players.py     選手別の成績 JSON を作り直す
     ├── stamp_assets.py      index.html の css/js に ?v=ハッシュ を付ける
+    ├── seed_ci_db.py        CI 用の空 DuckDB を作る
+    ├── team_dim.csv         その種データ（30チーム）
     ├── build_schedule.py    日程を NBA API から取り直す
     └── fetch_rosters.py     ロスターを NBA API から取り直す
 ```
@@ -84,6 +88,34 @@ JSON の fetch URL に付く。**データを作り直したときも走らせ�
 ★ ただし `index.html` 自身も10分キャッシュされる。
 新しいハッシュが読まれるまでは最大10分かかり、そこは消せない。
 消えるのは「css だけ新しくて js が古い」というズレのほう。
+
+## 自動更新（GitHub Actions）
+
+`.github/workflows/update-data.yml` が**毎日 19:00 JST** に日程とロスターを
+取り直してコミットする。**手動実行**は GitHub の Actions タブ →
+「データ更新」→ **Run workflow** ボタン。
+
+更新されるのは次の3つだけ。
+
+| ファイル | 更新 | 理由 |
+|---|---|---|
+| `schedule.json` | ○ | NBA API の ScheduleLeagueV2 から取り直す |
+| `rosters.json` の在籍・背番号など | ○ | CommonTeamRoster から取り直す |
+| `teams.json` | ○ | `tools/team_dim.csv` から作る |
+| `rosters.json` の前季平均 | ✕ | 試合ログが要る。既存の値を据え置く |
+| `players/*.json` | ✕ | 同上。ローカルで作り直す |
+
+試合ログの表（`player_game_base` / `panel_start` / `team_game_adv`）は
+929MB の `nba.duckdb` にしか無く、リポジトリにも CI にも置けない。
+そのため CI では**既存の JSON を据え置く**作りにしてある
+（`build_page1.py` の `has_table()`）。
+
+★ **ブラウザ上の「更新ボタン」は作れない。**
+`stats.nba.com` は CORS を返さず、`cdn.nba.com` も `Failed to fetch` になる。
+静的サイトには JSON の保存先も無い。更新は必ずサーバ側（Actions かローカル）。
+
+★ stats.nba.com がクラウドの IP を弾くことがある。
+Actions で落ちるようならログを見て、ローカル実行に切り替える。
 
 ## データの更新
 

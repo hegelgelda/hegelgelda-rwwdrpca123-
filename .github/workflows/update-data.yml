@@ -1,0 +1,91 @@
+name: データ更新
+
+# 日程とロスターを NBA API から取り直し、public/data1/ を作り直してコミットする。
+#
+#   - 毎日 10:00 UTC（19:00 JST / 06:00 ET）に自動で走る
+#   - Actions タブの "Run workflow" ボタンから手動でも走らせられる
+#
+# ★ 選手ページ（public/data1/players/）と前季の平均成績は**更新されない**。
+#   これらは試合ログの表（player_game_base など）が要り、それは
+#   929MB の nba.duckdb にしか無い。ローカルで作り直してコミットする。
+
+on:
+  schedule:
+    - cron: '0 10 * * *'
+  workflow_dispatch:
+    inputs:
+      season:
+        description: '取り直すシーズン'
+        required: false
+        default: '2026-27'
+
+# 自分のリポジトリへコミットするので書き込み権限が要る
+permissions:
+  contents: write
+
+# 手動実行と定時実行がぶつかって同じファイルを押し合わないようにする
+concurrency:
+  group: update-data
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: 依存を入れる
+        run: pip install duckdb pandas numpy nba_api
+
+      - name: 空の DB を用意する
+        run: python tools/seed_ci_db.py --db ci.duckdb
+
+      # ★ stats.nba.com はクラウドの IP を弾くことがある。
+      #   ここで落ちたら Actions からは取りに行けないということなので、
+      #   ログを見て判断する（ローカル実行に切り替える）。
+      - name: 日程を取り直す
+        run: |
+          python tools/build_schedule.py \
+            --db ci.duckdb \
+            --seasons "${{ github.event.inputs.season || '2026-27' }}" \
+            --no-team-schedule
+
+      - name: ロスターを取り直す
+        run: |
+          python tools/fetch_rosters.py \
+            --db ci.duckdb \
+            --season "${{ github.event.inputs.season || '2026-27' }}"
+
+      - name: 表示用 JSON を作り直す
+        run: python tools/build_page1.py --db ci.duckdb
+
+      # データのハッシュを app.js の DATA_V に埋める。
+      # これをやらないと GitHub Pages の 10 分キャッシュで古い JSON が使われる
+      - name: キャッシュ用のハッシュを振り直す
+        run: python tools/stamp_assets.py
+
+      - name: 変わっていればコミットする
+        run: |
+          rm -f ci.duckdb ci.duckdb.wal
+          # git diff では新しく増えたファイルを拾えないので status で見る
+          if [ -z "$(git status --porcelain)" ]; then
+            echo "変更なし。コミットしない"
+            exit 0
+          fi
+          git config user.name  "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -m "データ更新 $(date -u '+%Y-%m-%d')
+
+          NBA API から日程とロスターを取り直した（update-data.yml）。"
+          git push
+
+      - name: 何が変わったか出す
+        if: always()
+        run: git log --oneline -1 && git show --stat --oneline HEAD | head -20

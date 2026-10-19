@@ -1,0 +1,31 @@
+team_id,tri,full_name,first_season,last_season,games,arena_name,arena_city,arena_state,conference,division,city,nickname
+1610612737,ATL,Atlanta Hawks,2014-15,2025-26,1032,State Farm Arena,Atlanta,GA,East,Southeast,Atlanta,Hawks
+1610612751,BKN,Brooklyn Nets,2014-15,2025-26,1000,Barclays Center,Brooklyn,NY,East,Atlantic,Brooklyn,Nets
+1610612738,BOS,Boston Celtics,2014-15,2025-26,1124,TD Garden,Boston,MA,East,Atlantic,Boston,Celtics
+1610612766,CHA,Charlotte Hornets,2014-15,2025-26,968,Spectrum Center,Charlotte,NC,East,Southeast,Charlotte,Hornets
+1610612741,CHI,Chicago Bulls,2014-15,2025-26,985,United Center,Chicago,IL,East,Central,Chicago,Bulls
+1610612739,CLE,Cleveland Cavaliers,2014-15,2025-26,1084,Quicken Loans Arena,Cleveland,OH,East,Central,Cleveland,Cavaliers
+1610612742,DAL,Dallas Mavericks,2014-15,2025-26,1032,American Airlines Center,Dallas,TX,West,Southwest,Dallas,Mavericks
+1610612743,DEN,Denver Nuggets,2014-15,2025-26,1065,Ball Arena,Denver,CO,West,Northwest,Denver,Nuggets
+1610612765,DET,Detroit Pistons,2014-15,2025-26,986,Little Caesars Arena,Detroit,MI,East,Central,Detroit,Pistons
+1610612744,GSW,Golden State Warriors,2014-15,2025-26,1115,Chase Center,San Francisco,CA,West,Pacific,Golden State,Warriors
+1610612745,HOU,Houston Rockets,2014-15,2025-26,1050,Toyota Center,Houston,TX,West,Southwest,Houston,Rockets
+1610612754,IND,Indiana Pacers,2014-15,2025-26,1033,Bankers Life Fieldhouse,Indianapolis,IN,East,Central,Indiana,Pacers
+1610612746,LAC,Los Angeles Clippers,2014-15,2025-26,1050,STAPLES Center,Los Angeles,CA,West,Pacific,LA,Clippers
+1610612747,LAL,Los Angeles Lakers,2014-15,2025-26,1029,STAPLES Center,Los Angeles,CA,West,Pacific,Los Angeles,Lakers
+1610612763,MEM,Memphis Grizzlies,2014-15,2025-26,1018,FedExForum,Memphis,TN,West,Southwest,Memphis,Grizzlies
+1610612748,MIA,Miami Heat,2014-15,2025-26,1066,AmericanAirlines Arena,Miami,FL,East,Southeast,Miami,Heat
+1610612749,MIL,Milwaukee Bucks,2014-15,2025-26,1060,Fiserv Forum,Milwaukee,WI,East,Central,Milwaukee,Bucks
+1610612750,MIN,Minnesota Timberwolves,2014-15,2025-26,1018,Target Center,Minneapolis,MN,West,Northwest,Minnesota,Timberwolves
+1610612740,NOP,New Orleans Pelicans,2014-15,2025-26,992,Smoothie King Center,New Orleans,LA,West,Southwest,New Orleans,Pelicans
+1610612752,NYK,New York Knicks,2014-15,2025-26,1024,Madison Square Garden,New York,NY,East,Atlantic,New York,Knicks
+1610612760,OKC,Oklahoma City Thunder,2014-15,2025-26,1055,Chesapeake Energy Arena,Oklahoma City,OK,West,Northwest,Oklahoma City,Thunder
+1610612753,ORL,Orlando Magic,2014-15,2025-26,997,Amway Center,Orlando,FL,East,Southeast,Orlando,Magic
+1610612755,PHI,Philadelphia 76ers,2014-15,2025-26,1045,Wells Fargo Center,Philadelphia,PA,East,Atlantic,Philadelphia,76ers
+1610612756,PHX,Phoenix Suns,2014-15,2025-26,1021,Talking Stick Resort Arena,Phoenix,AZ,West,Pacific,Phoenix,Suns
+1610612757,POR,Portland Trail Blazers,2014-15,2025-26,1024,Moda Center,Portland,OR,West,Northwest,Portland,Trail Blazers
+1610612758,SAC,Sacramento Kings,2014-15,2025-26,974,Golden 1 Center,Sacramento,CA,West,Pacific,Sacramento,Kings
+1610612759,SAS,San Antonio Spurs,2014-15,2025-26,1033,AT&T Center,San Antonio,TX,West,Southwest,San Antonio,Spurs
+1610612761,TOR,Toronto Raptors,2014-15,2025-26,1057,Scotiabank Arena,Toronto,ON,East,Atlantic,Toronto,Raptors
+1610612762,UTA,Utah Jazz,2014-15,2025-26,1015,Vivint Smart Home Arena,Salt Lake City,UT,West,Northwest,Utah,Jazz
+1610612764,WAS,Washington Wizards,2014-15,2025-26,1000,Capital One Arena,Washington,DC,East,Southeast,Washington,Wizards

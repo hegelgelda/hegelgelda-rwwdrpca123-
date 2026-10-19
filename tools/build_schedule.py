@@ -207,6 +207,12 @@ def build_team_schedule(con) -> None:
 # ================================================================== 検算
 
 def report(con) -> None:
+    # 検算の一部は結果の表（team_game_adv）と突き合わせる。
+    # GitHub Actions の小さい DB には無いので、その場合は検算を飛ばす。
+    if not con.execute("select count(*) from information_schema.tables "
+                       "where table_name = 'team_game_adv'").fetchone()[0]:
+        print("\n検算は飛ばした（team_game_adv が無い）")
+        return
     hr("検算")
     sub("シーズン x 種別の試合数と状態")
     print(con.execute("""
@@ -273,6 +279,8 @@ def main() -> None:
     ap.add_argument("--seasons", default=None,
                     help="カンマ区切り。既定は 2014-15〜2026-27")
     ap.add_argument("--report-only", action="store_true")
+    ap.add_argument("--no-team-schedule", action="store_true",
+                    help="team_schedule を作らない（team_dim が無い環境用）")
     a = ap.parse_args()
     if not os.path.exists(a.db):
         print(f"[ERROR] {a.db} が見つかりません")
@@ -306,7 +314,13 @@ def main() -> None:
         con.unregister("_n")
         print(f"\n  game_schedule: 累計 "
               f"{con.execute('select count(*) from game_schedule').fetchone()[0]:,} 行")
-        build_team_schedule(con)
+        # team_schedule はチーム単位に展開した表で、休養日数などを付ける。
+        # team_dim が要るので、GitHub Actions の小さい DB では作れない。
+        # サイト（build_page1.py）は game_schedule しか見ないので飛ばせる。
+        if a.no_team_schedule:
+            print("  team_schedule: 飛ばした（--no-team-schedule）")
+        else:
+            build_team_schedule(con)
     else:
         con = duckdb.connect(a.db, read_only=True)
 

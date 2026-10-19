@@ -52,6 +52,37 @@ def clean(v):
     return v
 
 
+def has_table(con, name: str) -> bool:
+    """その表が DB にあるか。
+
+    GitHub Actions では日程とロスターだけを取り直すので、
+    929MB の DB にしか無い表（player_game_base など）が存在しない。
+    無いときは既存の JSON を使い回して、壊さずに進める。
+    """
+    return bool(con.execute(
+        "select count(*) from information_schema.tables "
+        "where table_schema = 'main' and table_name = ?", [name]).fetchone()[0])
+
+
+def read_json(out: str, name: str):
+    """既にコミットしてある JSON を読む。無ければ None"""
+    p = os.path.join(out, name)
+    if not os.path.exists(p):
+        return None
+    with open(p, encoding="utf-8") as f:
+        return json.load(f)
+
+
+def keep(out: str, name: str) -> int:
+    """作り直さずに残す。サイズだけ数える"""
+    p = os.path.join(out, name)
+    if not os.path.exists(p):
+        raise SystemExit(f"  ! {name} が無く、作り直す材料も無い")
+    n = os.path.getsize(p)
+    print(f"  {name:18s} {n / 1024:8,.1f} KB  (据え置き)")
+    return n
+
+
 def write(out: str, name: str, obj) -> int:
     p = os.path.join(out, name)
     os.makedirs(os.path.dirname(p), exist_ok=True)
@@ -81,10 +112,15 @@ def main() -> None:
     tot = 0
 
     # ---------------------------------------------------------- teams
-    t = con.execute(q("""
-        select tri, full_name, conference, division, city
-        from team_dim order by conference, division, tri""")).df()
-    tot += write(a.out, "teams.json", t.to_dict("records"))
+    # team_dim はほぼ動かない。CI の小さい DB には無いので、
+    # 無ければ既にコミットしてある teams.json をそのまま残す。
+    if has_table(con, "team_dim"):
+        t = con.execute(q("""
+            select tri, full_name, conference, division, city
+            from team_dim order by conference, division, tri""")).df()
+        tot += write(a.out, "teams.json", t.to_dict("records"))
+    else:
+        tot += keep(a.out, "teams.json")
 
     # ---------------------------------------------------------- schedule
     # ★ 日本時間も一緒に出す。
@@ -114,8 +150,23 @@ def main() -> None:
     })
 
     # ---------------------------------------------------------- rosters
-    # 前季の平均成績（レギュラーのみ）。無い選手は null
-    prev = con.execute(q(f"""
+    # 前季の平均成績（レギュラーのみ）。無い選手は null。
+    # ★ 試合ログの表が無い（CI の小さい DB）ときは、
+    #   既存の rosters.json から player_id 引きで持ってくる。
+    #   前季の成績はもう動かないので、作り直す必要が無い。
+    STAT = ("g", "mpg", "ppg", "rpg", "apg")
+    if has_table(con, "player_game_base") and has_table(con, "team_game_adv"):
+        prev_of = None
+    else:
+        old = read_json(a.out, "rosters.json")
+        if not old:
+            raise SystemExit("  ! 試合ログも既存の rosters.json も無い")
+        prev_of = {p["id"]: {k: p.get(k) for k in STAT}
+                   for ps in old["teams"].values() for p in ps}
+        print(f"  （試合ログの表が無いので前季成績は据え置き: "
+              f"{len(prev_of):,} 名ぶん）")
+
+    prev = None if prev_of is not None else con.execute(q(f"""
         select b.player_id,
                count(*) as g,
                round(avg(split_part(b.min_sec,':',1)::double
@@ -139,7 +190,11 @@ def main() -> None:
 
     by: dict[str, list] = {}
     for x in r.itertuples():
-        p = prev.loc[x.player_id].to_dict() if x.player_id in prev.index else {}
+        if prev_of is not None:
+            p = prev_of.get(int(x.player_id)) or {}
+        else:
+            p = (prev.loc[x.player_id].to_dict()
+                 if x.player_id in prev.index else {})
         by.setdefault(x.tri, []).append({
             "id": int(x.player_id),
             "name": x.player_name,
@@ -153,7 +208,7 @@ def main() -> None:
             "acq": clean(x.how_acquired),
             "tw": int(x.two_way),
             # 前季の成績（無ければ null）
-            "g": int(p["g"]) if p else None,
+            "g": int(p["g"]) if p.get("g") is not None else None,
             "mpg": clean(p.get("mpg")) if p else None,
             "ppg": clean(p.get("ppg")) if p else None,
             "rpg": clean(p.get("rpg")) if p else None,

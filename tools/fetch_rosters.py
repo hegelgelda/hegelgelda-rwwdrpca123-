@@ -119,7 +119,12 @@ def report(con, season: str) -> None:
     if len(dup):
         print(dup.head(5).to_string(index=False))
 
-    # 過去に出場履歴があるか（新人・新規加入は無くて当然）
+    # 過去に出場履歴があるか（新人・新規加入は無くて当然）。
+    # 試合ログの表は GitHub Actions の小さい DB には無いので、その場合は飛ばす
+    if not con.execute("select count(*) from information_schema.tables "
+                       "where table_name = 'player_game_base'").fetchone()[0]:
+        print("\n  出場履歴との突き合わせは飛ばした（player_game_base が無い）")
+        return
     j = con.execute("""
         select count(*) n,
                sum(case when b.player_id is not null then 1 else 0 end) known
