@@ -116,6 +116,19 @@ tbody tr:hover { background: var(--panel); }
 .dim { color: var(--muted); }
 .wrap { overflow-x: auto; }
 
+/* ---------------------------------------------------------- career */
+.career { font-size: 13px; white-space: nowrap; }
+.career td, .career th { padding: 6px 7px; }
+.career tr.total td {
+  border-top: 2px solid var(--line); font-weight: 600;
+  background: var(--panel);
+}
+.career tr.sep td {
+  color: var(--muted); font-size: 12px; padding-top: 16px;
+  border-bottom: 1px solid var(--line);
+}
+.career tr.sep:hover td { background: none; }
+
 .teamhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
 .teamhead .tri {
   font-family: var(--mono); font-size: 13px; color: var(--muted);

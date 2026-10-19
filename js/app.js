@@ -44,6 +44,10 @@ const todayISO = () => new Date().toISOString().slice(0, 10);
 const num = (v, dig = 1) => (v === null || v === undefined)
   ? '<span class="dim">—</span>' : Number(v).toFixed(dig);
 
+/* 率は .561 の形で出す（頭の 0 を落とす） */
+const pc = (v) => (v === null || v === undefined)
+  ? '<span class="dim">—</span>' : Number(v).toFixed(3).replace(/^0/, '');
+
 /* ------------------------------------------------------------- 日程 */
 
 async function renderSchedule(dateArg) {
@@ -190,7 +194,7 @@ function rosterTable(ps, prev) {
     <tbody>
     ${ps.map((p) => `<tr>
       <td class="n dim">${esc(p.num ?? '')}</td>
-      <td>${esc(p.name)}
+      <td><a href="#/p/${esc(p.id)}">${esc(p.name)}</a>
         ${p.tw ? '<span class="badge">TW</span>' : ''}
         ${isNew(p) ? '<span class="badge">新加入</span>' : ''}</td>
       <td class="dim">${esc(p.pos ?? '')}</td>
@@ -237,6 +241,109 @@ function teamSchedule(gs, tri) {
     </tbody></table></div>`;
 }
 
+/* ------------------------------------------------------------- 選手 */
+
+/* ロスターから選手を探す。チーム名も要るので tri ごと返す */
+function findPlayer(rost, id) {
+  for (const [tri, ps] of Object.entries(rost.teams)) {
+    const p = ps.find((x) => String(x.id) === String(id));
+    if (p) return { p, tri };
+  }
+  return null;
+}
+
+async function renderPlayer(id) {
+  const [teams, rost] = await Promise.all([load('teams'), load('rosters')]);
+  const hit = findPlayer(rost, id);
+  const team = hit ? teams.find((t) => t.tri === hit.tri) : null;
+
+  /* 成績は選手ごとの JSON。2014-15 以降に出場が無い選手はファイルが無い */
+  let car = null;
+  try {
+    car = await load(`players/${id}`);
+  } catch (e) {
+    if (!hit) {
+      view.innerHTML = `<p class="err">選手 ${esc(id)} が無い。</p>`;
+      return;
+    }
+  }
+
+  const name = (hit && hit.p.name) || (car && car.name) || id;
+  const p = hit ? hit.p : null;
+
+  view.innerHTML = `
+    <div class="teamhead">
+      <h1>${esc(name)}</h1>
+      ${p && p.num ? `<span class="tri">#${esc(p.num)}</span>` : ''}
+      ${team ? `<span class="sub" style="margin:0">
+        <a href="#/team/${esc(team.tri)}">${esc(team.full_name)}</a>
+      </span>` : ''}
+    </div>
+    ${p ? `<p class="sub">
+      ${[p.pos, p.ht, p.wt ? `${p.wt} lb` : null,
+         p.age ? `${Math.round(p.age)} 歳` : null,
+         p.exp === 'R' ? 'ルーキー' : (p.exp ? `${p.exp} 年目` : null),
+         p.school].filter(Boolean).map(esc).join(' · ')}
+    </p>` : ''}
+    ${car ? careerTable(car)
+      : `<p class="empty">2014-15 以降の出場記録が無い。</p>`}
+    ${p && p.acq ? `<p class="sub">加入: ${esc(p.acq)}</p>` : ''}`;
+}
+
+function careerTable(car) {
+  const ST = { R: '', P: 'プレーオフ', I: 'プレーイン' };
+  const row = (s) => `<tr class="${s.label ? 'total' : ''}">
+    <td>${esc(s.label || s.y)}</td>
+    <td class="dim">${esc(s.teams || '')}
+      ${s.st && ST[s.st] ? `<span class="badge">${ST[s.st]}</span>` : ''}</td>
+    <td class="n">${s.g}</td>
+    <td class="n">${num(s.mpg)}</td>
+    <td class="n">${num(s.fgm)}</td><td class="n">${num(s.fga)}</td>
+    <td class="n">${pc(s.fg)}</td>
+    <td class="n">${num(s.tpm)}</td><td class="n">${num(s.tpa)}</td>
+    <td class="n">${pc(s.tp)}</td>
+    <td class="n">${num(s.ftm)}</td><td class="n">${num(s.fta)}</td>
+    <td class="n">${pc(s.ft)}</td>
+    <td class="n">${num(s.oreb)}</td><td class="n">${num(s.dreb)}</td>
+    <td class="n">${num(s.reb)}</td>
+    <td class="n">${num(s.ast)}</td><td class="n">${num(s.stl)}</td>
+    <td class="n">${num(s.blk)}</td><td class="n">${num(s.tov)}</td>
+    <td class="n">${num(s.pf)}</td>
+    <td class="n"><strong>${num(s.pts)}</strong></td>
+    <td class="n">${pc(s.ts)}</td>
+  </tr>`;
+
+  /* レギュラーが先、プレーオフなどは後ろにまとめる */
+  const reg = car.seasons.filter((s) => s.st === 'R');
+  const post = car.seasons.filter((s) => s.st !== 'R');
+
+  return `<div class="wrap"><table class="career">
+    <thead><tr>
+      <th>シーズン</th><th>チーム</th><th class="n">試合</th><th class="n">MP</th>
+      <th class="n">FGM</th><th class="n">FGA</th><th class="n">FG%</th>
+      <th class="n">3PM</th><th class="n">3PA</th><th class="n">3P%</th>
+      <th class="n">FTM</th><th class="n">FTA</th><th class="n">FT%</th>
+      <th class="n">OR</th><th class="n">DR</th><th class="n">REB</th>
+      <th class="n">AST</th><th class="n">STL</th><th class="n">BLK</th>
+      <th class="n">TOV</th><th class="n">PF</th><th class="n">PTS</th>
+      <th class="n">TS%</th>
+    </tr></thead>
+    <tbody>
+      ${reg.map(row).join('')}
+      ${car.career ? row(car.career) : ''}
+      ${post.length ? `<tr class="sep"><td colspan="23">ポストシーズン</td></tr>
+        ${post.map(row).join('')}` : ''}
+    </tbody>
+  </table></div>
+  <p class="sub" style="margin-top:12px">
+    1試合平均。通算はレギュラーシーズンのみ。
+    FG% / 3P% / FT% / TS% は<strong>合計から計算</strong>している
+    （試合ごとの率の平均ではない）。
+    元データは <strong>${esc(car.first)}</strong> 以降しか無いので、
+    それより前のシーズンは出ない。
+  </p>`;
+}
+
 /* ------------------------------------------------------------- 経路 */
 
 function go(hash) {
@@ -255,6 +362,9 @@ async function route() {
     } else if (parts[0] === 'team' && parts[1]) {
       nav.schedule = ''; nav.teams = 'on';
       await renderTeam(parts[1].toUpperCase(), parts[2]);
+    } else if (parts[0] === 'p' && parts[1]) {
+      nav.schedule = ''; nav.teams = 'on';
+      await renderPlayer(parts[1]);
     } else if (parts[0] === 'd' && parts[1]) {
       await renderSchedule(parts[1]);
     } else {
