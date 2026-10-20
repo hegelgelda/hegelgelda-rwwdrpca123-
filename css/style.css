@@ -179,6 +179,50 @@ td .pct {
   margin-left: 4px;
 }
 
+/* ------------------------------------------------------- model */
+.modelbox { margin-top: 36px; }
+.modelbox h2 { color: var(--ink); margin-bottom: 4px; }
+
+/* MP のつまみ */
+.mpbar {
+  display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  margin: 0 0 18px;
+}
+.mpbar button {
+  font: inherit; font-family: var(--mono); color: var(--ink);
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 8px; padding: 5px 10px; cursor: pointer;
+}
+.mpbar button:hover { border-color: var(--accent); }
+.mpbar .today { background: var(--accent-soft); border-color: var(--accent);
+                color: var(--accent); }
+.mpbar input[type="range"] { flex: 1; min-width: 120px; accent-color: var(--accent); }
+.mpbar .now { font-family: var(--mono); font-size: 14px; }
+.mpbar .now strong { font-size: 18px; }
+
+.model { margin: 0 0 24px; }
+.model figcaption {
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+.model figcaption .t { font-weight: 600; font-size: 14px; }
+.model figcaption .dim { font-size: 12px; }
+.model svg { width: 100%; height: auto; display: block; }
+.model .grid, .model .axis { stroke: var(--line); stroke-width: 1; }
+.model .med-halo { stroke: var(--bg); stroke-width: 4; }
+.model .med { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 3 3; }
+.model .tick { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+.model .tick.end { text-anchor: end; }
+.model .tick.mid { text-anchor: middle; }
+.model .tick.lab { fill: var(--ink); }
+.model rect:hover { opacity: .75; }
+
+/* under の確率。ライン（.5 刻み）ごとに1列 */
+table.under { width: auto; font-size: 13px; margin-top: 6px; }
+table.under th, table.under td { padding: 4px 10px; }
+table.under tbody th { color: var(--muted); font-weight: 600; }
+table.under tbody tr:hover { background: none; }
+
 /* ---------------------------------------------------------- DDI */
 .ddi { margin: -6px 0 22px; }
 .ddi.none { font-size: 13px; margin: -6px 0 22px; }

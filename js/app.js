@@ -395,6 +395,9 @@ async function renderPlayer(id) {
   }
 
   const name = (hit && hit.p.name) || (car && car.name) || id;
+  /* 期待値モデルは MP を状態として持つ。選手が変わったら 30 分に戻す */
+  curPlayer = car;
+  curMp = 30;
   const p = hit ? hit.p : null;
 
   view.innerHTML = `
@@ -413,7 +416,10 @@ async function renderPlayer(id) {
     </p>` : ''}
     ${car ? careerTable(car)
       : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}
-    ${car ? distBlock(car) : ''}`;
+    ${car ? distBlock(car) : ''}
+    ${car ? modelBlock(car) : ''}`;
+
+  bindModel();
 }
 
 function careerTable(car) {
@@ -610,6 +616,200 @@ function ddiNote(dd) {
       </p>
     </div>
   </details>`;
+}
+
+/* ------------------------------------------------- 期待値モデル */
+
+/* 通算の合計から「1分あたり」を出す。
+   通算は per game で持っているが、割れば1分あたりは同じ（g が約分される）。
+   p は得点でも最大 0.93（Embiid）なので、分を試行とする二項分布が成り立つ。 */
+const STATS = [
+  { k: 'pts', label: '得点' },
+  { k: 'ast', label: 'アシスト' },
+  { k: 'reb', label: 'リバウンド' },
+];
+
+/* 二項分布の確率質量。n ≤ 48 なので漸化式で十分
+   pmf[0] = (1-p)^n,  pmf[k] = pmf[k-1] × (n-k+1)/k × p/(1-p) */
+function binomPmf(n, p) {
+  if (p <= 0) { const a = new Array(n + 1).fill(0); a[0] = 1; return a; }
+  if (p >= 1) { const a = new Array(n + 1).fill(0); a[n] = 1; return a; }
+  const out = new Array(n + 1);
+  out[0] = Math.pow(1 - p, n);
+  const r = p / (1 - p);
+  for (let k = 1; k <= n; k++) out[k] = out[k - 1] * ((n - k + 1) / k) * r;
+  return out;
+}
+
+/* 1つの項目ぶん。mp 分出たときの分布と、ライン未満（under）の確率 */
+function statModel(car, st, mp) {
+  const c = car.career;
+  const lam = c[st.k] / c.mpg;          /* 1分あたりの期待値 */
+  const p = Math.min(1, Math.max(0, lam));
+  const n = Math.max(1, Math.round(mp));
+  const pmf = binomPmf(n, p);
+
+  /* 累積。under(L) = P(X ≤ floor(L)) */
+  const cdf = [];
+  let acc = 0;
+  for (let k = 0; k <= n; k++) { acc += pmf[k]; cdf[k] = Math.min(1, acc); }
+
+  const mean = n * p;
+  const sd = Math.sqrt(n * p * (1 - p));
+  const lo = Math.max(0, Math.floor(mean - 4 * sd));
+  const hi = Math.min(n, Math.ceil(mean + 4 * sd) + 1);
+
+  /* ベッティングのラインに合わせて .5 刻みで並べる（同点が出ない） */
+  const base = Math.round(mean);
+  const lines = [-1.5, -0.5, 0.5, 1.5]
+    .map((d) => base + d).filter((L) => L > 0);
+
+  return { lam, p, n, pmf, cdf, mean, sd, lo, hi, lines, st };
+}
+
+function modelChart(m) {
+  const sm = narrow();
+  const W = sm ? 330 : 640, H = sm ? 170 : 160;
+  const L = sm ? 30 : 42, R = sm ? 8 : 14, T = 26, B = 28;
+  const iw = W - L - R, ih = H - T - B;
+  const nb = m.hi - m.lo + 1;
+  const bw = iw / nb;
+  const top = Math.max(0.02, Math.ceil(Math.max(
+    ...m.pmf.slice(m.lo, m.hi + 1)) * 20) / 20);
+  const y = (v) => T + ih - (v / top) * ih;
+  const xMid = (k) => L + (k - m.lo + 0.5) * bw;
+
+  const bars = [];
+  for (let k = m.lo; k <= m.hi; k++) {
+    const v = m.pmf[k] || 0;
+    if (v <= 0) continue;
+    const w = Math.max(1, bw - 2);
+    const hgt = Math.max(1, ih - (y(v) - T));
+    bars.push(`<rect x="${(L + (k - m.lo) * bw + 1).toFixed(1)}"
+      y="${y(v).toFixed(1)}" width="${w.toFixed(1)}" height="${hgt.toFixed(1)}"
+      rx="${Math.min(3, w / 2).toFixed(1)}" fill="var(--accent)"
+      ><title>${k} ${esc(m.st.label)}: ${(v * 100).toFixed(1)}%
+ ／ ${k} 以下に収まる確率 ${(m.cdf[k] * 100).toFixed(1)}%</title></rect>`);
+  }
+
+  /* 目盛りは端と中央だけ。棒ごとに数字は振らない */
+  const ticks = [m.lo, Math.round((m.lo + m.hi) / 2), m.hi]
+    .filter((v, i, a) => a.indexOf(v) === i);
+  const mx = L + (m.mean - m.lo + 0.5) * bw;
+
+  return `<svg viewBox="0 0 ${W} ${H}" role="img"
+      aria-label="${esc(m.st.label)}の分布。期待値 ${m.mean.toFixed(1)}">
+    <line x1="${L}" y1="${T}" x2="${W - R}" y2="${T}" class="grid"/>
+    <line x1="${L}" y1="${T + ih}" x2="${W - R}" y2="${T + ih}" class="axis"/>
+    <text x="${L - 6}" y="${T + 4}" class="tick end">${
+      (top * 100).toFixed(0)}%</text>
+    <text x="${L - 6}" y="${T + ih + 4}" class="tick end">0</text>
+    ${bars.join('')}
+    <line x1="${mx.toFixed(1)}" y1="${T - 4}" x2="${mx.toFixed(1)}"
+          y2="${T + ih}" class="med-halo"/>
+    <line x1="${mx.toFixed(1)}" y1="${T - 4}" x2="${mx.toFixed(1)}"
+          y2="${T + ih}" class="med"/>
+    <text x="${mx.toFixed(1)}" y="${T - 8}" class="tick mid lab">期待値 ${
+      m.mean.toFixed(1)}</text>
+    ${ticks.map((k) => `<text x="${xMid(k).toFixed(1)}" y="${T + ih + 16}"
+      class="tick mid">${k}</text>`).join('')}
+  </svg>`;
+}
+
+function statBlock(car, st, mp) {
+  const m = statModel(car, st, mp);
+  return `<figure class="model">
+    <figcaption>
+      <span class="t">${esc(st.label)}</span>
+      <span class="dim">1分あたり ${m.lam.toFixed(3)} ×
+        ${m.n} 分 = 期待値 <strong>${m.mean.toFixed(1)}</strong>
+        （SD ${m.sd.toFixed(1)}）</span>
+    </figcaption>
+    ${modelChart(m)}
+    <table class="under"><thead><tr>
+      <th>ライン</th>${m.lines.map((L) => `<th class="n">${L.toFixed(1)}</th>`)
+        .join('')}
+    </tr></thead><tbody><tr>
+      <th>under</th>${m.lines.map((L) => `<td class="n">${
+        (m.cdf[Math.floor(L)] * 100).toFixed(1)}%</td>`).join('')}
+    </tr></tbody></table>
+  </figure>`;
+}
+
+/* MP を変えたときに作り直すのはこの中だけ */
+function modelInner(car, mp) {
+  return `<div class="mpbar">
+      <button data-mp="-5">−5</button>
+      <button data-mp="-1">−1</button>
+      <input type="range" id="mprange" min="1" max="48" step="1" value="${mp}">
+      <button data-mp="1">+1</button>
+      <button data-mp="5">+5</button>
+      <span class="now"><strong>${mp}</strong> 分</span>
+      <button data-mp="reset" class="today">30 分に戻す</button>
+    </div>
+    ${STATS.map((st) => statBlock(car, st, mp)).join('')}`;
+}
+
+let curPlayer = null;
+let curMp = 30;
+
+function modelBlock(car) {
+  if (!car || !car.career || !car.career.mpg) return '';
+  return `<section class="modelbox">
+    <h2>出場時間からの期待値モデル</h2>
+    <p class="sub">
+      通算（${esc(car.first)} 以降のレギュラーシーズン）の合計から
+      <strong>1分あたりの期待値</strong>を出し、
+      <strong>1分を1回の試行とする二項分布</strong>で、
+      指定した出場時間のときの分布とライン未満（under）の確率を出す。
+    </p>
+    <div id="model">${modelInner(car, curMp)}</div>
+    <details class="post">
+      <summary>このモデルの前提と限界</summary>
+      <div class="sub">
+        <p>
+          1分あたりの率は<strong>通算の合計 ÷ 通算の出場時間</strong>。
+          直近の調子や相手、ホーム／アウェイは見ていない。
+        </p>
+        <p>
+          ★ <strong>得点は2点・3点とまとまって入る</strong>ので、
+          1分1回の試行に置き換えるとばらつきを小さく見積もる。
+          得点の under 確率は実際より極端（0% / 100% 寄り）に出る。
+          アシストとリバウンドは1つずつ増えるので、この前提とよく合う。
+        </p>
+        <p>
+          ★ 実際の試合は二項分布より<strong>ばらつきが大きい</strong>
+          （相手・役割・ファウル・試合展開）。
+          ここでの確率は目安で、そのまま賭けの期待値には使えない。
+        </p>
+        <p>
+          ★ 出場時間そのものの不確実性は入っていない。
+          「30 分出たら」という条件つきの分布なので、
+          実際に何分出るかは上の分布と DDI のほうを見ること。
+        </p>
+      </div>
+    </details>
+  </section>`;
+}
+
+/* MP のつまみ。#model の中だけ作り直す */
+function bindModel() {
+  const box = document.getElementById('model');
+  if (!box) return;
+  const redraw = () => {
+    box.innerHTML = modelInner(curPlayer, curMp);
+    bindModel();
+  };
+  box.querySelectorAll('.mpbar button').forEach((b) => {
+    b.onclick = () => {
+      const d = b.dataset.mp;
+      curMp = d === 'reset' ? 30
+        : Math.min(48, Math.max(1, curMp + Number(d)));
+      redraw();
+    };
+  });
+  const r = document.getElementById('mprange');
+  if (r) r.oninput = (e) => { curMp = Number(e.target.value); redraw(); };
 }
 
 function distBlock(car) {
