@@ -184,7 +184,7 @@ def main() -> None:
 
     n_file = n_byte = 0
     for pid, grp in rows.groupby("player_id", sort=False):
-        seasons, career = [], {}
+        seasons, career, recent = [], {}, {}
         for x in grp.to_dict("records"):
             st = "P" if x["st"] == "Playoffs" else (
                 "I" if x["st"] == "PlayIn" else "R")
@@ -193,6 +193,11 @@ def main() -> None:
             if st == "R":
                 for k in SUMS:
                     career[k] = career.get(k, 0) + x[k]
+                # 期待値モデルは直近3季だけを使う。
+                # 役割が変わった選手で、古い季の率を混ぜないため
+                if x["y"] >= DIST3[0]:
+                    for k in SUMS:
+                        recent[k] = recent.get(k, 0) + x[k]
 
         obj = {
             "id": int(pid),
@@ -200,6 +205,8 @@ def main() -> None:
             "first": FIRST,
             "seasons": seasons,
             "career": line(career, "通算") if career else None,
+            # 期待値モデル用。DIST3 の範囲（レギュラーのみ）の合計
+            "r3": line(recent, f"{DIST3[0]} 〜 {DIST3[1]}") if recent else None,
             "dist": by_player.get(int(pid)),
             "ddi": ddi.get(int(pid)),
             "d1": DIST1,

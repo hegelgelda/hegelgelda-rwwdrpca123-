@@ -13,7 +13,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '71d99fa8';
+const DATA_V = 'a2136963';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -632,9 +632,11 @@ function ddiNote(dd) {
 
 /* ------------------------------------------------- 期待値モデル */
 
-/* 通算の合計から「1分あたり」を出す。
-   通算は per game で持っているが、割れば1分あたりは同じ（g が約分される）。
-   p は得点でも最大 0.93（Embiid）なので、分を試行とする二項分布が成り立つ。 */
+/* 直近3季（r3）の合計から「1分あたり」を出す。
+   ★ 通算（2021-22 以降）ではなく 2023-24 以降だけを使う。
+     役割が変わった選手で、古い季の率を混ぜないため。
+   per game で持っているが、割れば1分あたりは同じ（g が約分される）。
+   p は得点でも 1 未満なので、分を試行とする二項分布が成り立つ。 */
 const STATS = [
   { k: 'pts', label: '得点' },
   { k: 'ast', label: 'アシスト' },
@@ -655,7 +657,7 @@ function binomPmf(n, p) {
 
 /* 1つの項目ぶん。mp 分出たときの分布と、ライン未満（under）の確率 */
 function statModel(car, st, mp) {
-  const c = car.career;
+  const c = car.r3;
   const lam = c[st.k] / c.mpg;          /* 1分あたりの期待値 */
   const p = Math.min(1, Math.max(0, lam));
   const n = Math.max(1, Math.round(mp));
@@ -766,12 +768,13 @@ let curPlayer = null;
 let curMp = 30;
 
 function modelBlock(car) {
-  if (!car || !car.career || !car.career.mpg) return '';
+  /* 2023-24 以降に出場が無い選手は率が出せないので、この枠ごと出さない */
+  if (!car || !car.r3 || !car.r3.mpg) return '';
   return `<section class="modelbox">
     <h2>出場時間からの期待値モデル</h2>
     <p class="sub">
-      通算（${esc(car.first)} 以降のレギュラーシーズン）の合計から
-      <strong>1分あたりの期待値</strong>を出し、
+      <strong>${esc(car.r3.label)}</strong>のレギュラーシーズン
+      （${car.r3.g} 試合）の合計から<strong>1分あたりの期待値</strong>を出し、
       <strong>1分を1回の試行とする二項分布</strong>で、
       指定した出場時間のときの分布とライン未満（under）の確率を出す。
     </p>
@@ -780,7 +783,9 @@ function modelBlock(car) {
       <summary>このモデルの前提と限界</summary>
       <div class="sub">
         <p>
-          1分あたりの率は<strong>通算の合計 ÷ 通算の出場時間</strong>。
+          1分あたりの率は<strong>直近3季の合計 ÷ 同じ期間の出場時間</strong>。
+          上の出場時間の分布と同じ範囲を使っている。
+          それより古い季（2021-22・2022-23）は入れていない。
           直近の調子や相手、ホーム／アウェイは見ていない。
         </p>
         <p>
