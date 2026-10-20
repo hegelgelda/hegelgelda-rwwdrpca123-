@@ -35,6 +35,12 @@ SEASON = "2026-27"
 # DB は 2014-15 から持っているが、ここより前は出さない
 FIRST = "2021-22"
 
+# 出場時間の分布に使う範囲。1シーズンと3シーズンの2通りを出す
+DIST1 = "2025-26"
+DIST3 = ("2023-24", "2025-26")
+BIN = 2          # 分
+NBIN = 24        # 0〜46分+。最後の箱は 46 分以上（延長戦があるので上は開く）
+
 
 def q(s: str) -> str:
     return " ".join(s.split())
@@ -133,6 +139,42 @@ def main() -> None:
     SUMS = ["g", "gs", "mp", "fgm", "fga", "tpm", "tpa", "ftm", "fta", "oreb",
             "dreb", "reb", "ast", "stl", "blk", "tov", "pf", "pts", "pm"]
 
+    # ---------------------------------------------------- 出場時間の分布
+    # 選手ページの一番下に出すヒストグラム。
+    # 「平均 30 分」が『毎試合 30 分』なのか『40 分と出番なしの往復』なのかは
+    # 平均だけでは判らない。試合ごとの出場時間を数えて形を見せる。
+    # レギュラーシーズンのみ。
+    logs = con.execute(q(f"""
+        select player_id,
+               season_year as y,
+               split_part(min_sec,':',1)::double
+               + split_part(min_sec,':',2)::double/60 as m
+        from player_game_base
+        where min is not null
+          and season_type = 'Regular Season'
+          and season_year >= '{DIST3[0]}'
+          and player_id in ({','.join(str(i) for i in ids)})
+    """)).fetchdf()
+
+    def hist(ms: list[float]) -> dict | None:
+        """2分刻み 24 本。最後の箱は 46 分以上（延長戦で 48 を超える）"""
+        if not ms:
+            return None
+        bins = [0] * NBIN
+        for m in ms:
+            bins[min(int(m // BIN), NBIN - 1)] += 1
+        s = sorted(ms)
+        n = len(s)
+        med = s[n // 2] if n % 2 else (s[n // 2 - 1] + s[n // 2]) / 2
+        return {"n": n, "med": round(med, 1), "bins": bins}
+
+    by_player: dict[int, dict] = {}
+    for pid, g in logs.groupby("player_id", sort=False):
+        one = hist(g.loc[g["y"] == DIST1, "m"].tolist())
+        three = hist(g["m"].tolist())
+        if one or three:
+            by_player[int(pid)] = {"bin": BIN, "s1": one, "s3": three}
+
     n_file = n_byte = 0
     for pid, grp in rows.groupby("player_id", sort=False):
         seasons, career = [], {}
@@ -151,6 +193,9 @@ def main() -> None:
             "first": FIRST,
             "seasons": seasons,
             "career": line(career, "通算") if career else None,
+            "dist": by_player.get(int(pid)),
+            "d1": DIST1,
+            "d3": f"{DIST3[0]} 〜 {DIST3[1]}",
         }
         p = os.path.join(pdir, f"{pid}.json")
         with open(p, "w", encoding="utf-8") as f:

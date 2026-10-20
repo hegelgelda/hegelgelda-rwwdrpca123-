@@ -13,7 +13,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '35d9af24';
+const DATA_V = '83ee3d5a';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -388,7 +388,8 @@ async function renderPlayer(id) {
          p.school].filter(Boolean).map(esc).join(' · ')}
     </p>` : ''}
     ${car ? careerTable(car)
-      : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}`;
+      : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}
+    ${car ? distBlock(car) : ''}`;
 }
 
 function careerTable(car) {
@@ -453,6 +454,88 @@ function careerTable(car) {
   </p>`;
 }
 
+/* --------------------------------------------------- 出場時間の分布 */
+
+/* 1枚ぶんのヒストグラム。
+   y は「試合に占める割合」。1シーズンと3シーズンでは母数が3倍ちがうので、
+   件数のままだと形を比べられない。x は 0〜48分で両方そろえる。 */
+/* 画面が狭いときは viewBox も小さく取る。
+   viewBox は実寸ではなく比率なので、横 640 のまま 375px に縮めると
+   目盛りの文字まで 0.6 倍になって読めなくなる */
+const narrow = () => window.innerWidth < 560;
+
+function histSvg(h, binW, title, note, top) {
+  const sm = narrow();
+  const W = sm ? 330 : 640, H = sm ? 190 : 176;
+  const L = sm ? 30 : 42, R = sm ? 8 : 14, T = 30, B = 30;
+  const iw = W - L - R, ih = H - T - B;
+  const nb = h.bins.length;
+  const bw = iw / nb;
+
+  /* ★ 上端は2枚で共通。panel ごとに変えると形の比較が歪む */
+  const y = (v) => T + ih - (v / top) * ih;
+  const xOf = (min) => L + (min / (binW * nb)) * iw;
+
+  const bars = h.bins.map((c, i) => {
+    if (!c) return '';
+    const hgt = Math.max(1, ih - (y(c / h.n) - T));
+    /* 棒どうしは 2px あけて、地の色が見えるようにする */
+    const w = Math.max(1, bw - 2);
+    const r = Math.min(3, w / 2);
+    const lo = i * binW, hi = i === nb - 1 ? '+' : `–${(i + 1) * binW}`;
+    return `<rect x="${(L + i * bw + 1).toFixed(1)}" y="${y(c / h.n).toFixed(1)}"
+      width="${w.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${r.toFixed(1)}"
+      fill="var(--accent)"><title>${lo}${hi} 分: ${c} 試合（${
+      (c / h.n * 100).toFixed(0)}%）</title></rect>`;
+  }).join('');
+
+  /* 中央値だけ直に書く。棒ごとに数字は振らない */
+  const mx = xOf(h.med);
+
+  return `<figure class="hist">
+    <figcaption>
+      <span class="t">${esc(title)}</span>
+      <span class="dim">${esc(note)} · ${h.n} 試合 · 中央値 ${h.med} 分</span>
+    </figcaption>
+    <svg viewBox="0 0 ${W} ${H}" role="img"
+         aria-label="${esc(title)} の出場時間の分布。${h.n} 試合、中央値 ${h.med} 分">
+      <line x1="${L}" y1="${T}" x2="${W - R}" y2="${T}" class="grid"/>
+      <line x1="${L}" y1="${T + ih}" x2="${W - R}" y2="${T + ih}" class="axis"/>
+      <text x="${L - 6}" y="${T + 4}" class="tick end">${
+        (top * 100).toFixed(0)}%</text>
+      <text x="${L - 6}" y="${T + ih + 4}" class="tick end">0</text>
+      ${bars}
+      <line x1="${mx.toFixed(1)}" y1="${T - 6}" x2="${mx.toFixed(1)}"
+            y2="${T + ih}" class="med-halo"/>
+      <line x1="${mx.toFixed(1)}" y1="${T - 6}" x2="${mx.toFixed(1)}"
+            y2="${T + ih}" class="med"/>
+      <text x="${mx.toFixed(1)}" y="${T - 10}" class="tick mid lab">中央値 ${
+        h.med}</text>
+      ${(sm ? [0, 24, 48] : [0, 12, 24, 36, 48]).map((m) => `<text x="${xOf(m).toFixed(1)}"
+        y="${T + ih + 16}" class="tick mid">${m === 48 ? '48分' : m}</text>`)
+        .join('')}
+    </svg>
+  </figure>`;
+}
+
+function distBlock(car) {
+  const d = car.dist;
+  if (!d || (!d.s1 && !d.s3)) return '';
+  /* 2枚で同じ y 軸を使う。片方だけ高いと形が違って見えてしまう */
+  const peak = Math.max(...[d.s1, d.s3].filter(Boolean)
+    .map((h) => Math.max(...h.bins) / h.n));
+  const top = Math.max(0.05, Math.ceil(peak * 20) / 20);
+  return `<section class="dist">
+    <h2>出場時間の分布</h2>
+    <p class="sub">
+      1試合ごとの出場時間を2分刻みで数えたもの。レギュラーシーズンのみ。
+      平均だけでは「毎試合 30 分」と「40 分と出番なしの往復」を区別できない。
+    </p>
+    ${d.s1 ? histSvg(d.s1, d.bin, '直近1シーズン', car.d1, top) : ''}
+    ${d.s3 ? histSvg(d.s3, d.bin, '直近3シーズン', car.d3, top) : ''}
+  </section>`;
+}
+
 /* ------------------------------------------------------------- 経路 */
 
 function go(hash) {
@@ -492,4 +575,18 @@ async function route() {
 }
 
 window.addEventListener('hashchange', route);
+
+/* 幅が breakpoint をまたいだときだけ描き直す（回転・ウィンドウ操作）。
+   毎回の resize で作り直すと無駄なので、またいだ時だけ */
+let wasNarrow = narrow();
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (narrow() === wasNarrow) return;
+    wasNarrow = narrow();
+    if (location.hash.startsWith('#/p/')) route();
+  }, 200);
+});
+
 route();
