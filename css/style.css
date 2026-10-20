@@ -282,6 +282,17 @@ details.post summary:hover { border-color: var(--accent); }
 details.post[open] summary { margin-bottom: 12px; }
 
 .teamhead { display: flex; align-items: baseline; gap: 12px; flex-wrap: wrap; }
+
+/* 選手ページの見出しは、下までスクロールしても誰を見ているか判るように
+   サイトヘッダの直下に貼り付ける。--hdr は app.js が測って入れる */
+.teamhead.stick {
+  /* 1px 重ねる。隙間があるとそこから中身が覗く（ヘッダのほうが前面） */
+  position: sticky; top: calc(var(--hdr, 52px) - 1px); z-index: 9;
+  background: var(--bg);
+  /* 下の表が透けないように、左右へ少しはみ出させて塗る */
+  margin: 0 -16px; padding: 10px 16px 8px;
+  border-bottom: 1px solid var(--line);
+}
 .teamhead .tri {
   font-family: var(--mono); font-size: 13px; color: var(--muted);
   border: 1px solid var(--line); border-radius: 6px; padding: 2px 8px;

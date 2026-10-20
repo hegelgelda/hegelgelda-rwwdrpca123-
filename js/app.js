@@ -401,7 +401,7 @@ async function renderPlayer(id) {
   const p = hit ? hit.p : null;
 
   view.innerHTML = `
-    <div class="teamhead">
+    <div class="teamhead stick">
       <h1>${esc(name)}</h1>
       ${p && p.num ? `<span class="tri">#${esc(p.num)}</span>` : ''}
       ${team ? `<span class="sub" style="margin:0">
@@ -892,6 +892,18 @@ async function route() {
   });
   window.scrollTo(0, 0);
 }
+
+/* 貼り付ける位置はサイトヘッダの下。
+   ヘッダは折り返しで高さが変わるので、測って CSS 変数に入れる */
+function setHeaderHeight() {
+  const h = document.querySelector('header.site');
+  if (h) {
+    document.documentElement.style.setProperty(
+      '--hdr', `${Math.round(h.getBoundingClientRect().height)}px`);
+  }
+}
+setHeaderHeight();
+window.addEventListener('resize', setHeaderHeight);
 
 window.addEventListener('hashchange', route);
 
