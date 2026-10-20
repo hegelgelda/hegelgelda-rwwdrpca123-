@@ -13,7 +13,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '83ee3d5a';
+const DATA_V = '8f887f51';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -518,6 +518,74 @@ function histSvg(h, binW, title, note, top) {
   </figure>`;
 }
 
+/* 起用ブレ指数（DDI）。分布の図の真下に、対応する期間のぶんを置く。
+   which = '25'（直近1シーズン）か '3'（直近3シーズン）。
+   ★ 生の DDI は出場時間の水準と独立ではない（相関 −0.16）。
+     選手どうしを並べるのは帯内パーセンタイルの側。 */
+function ddiRow(dd, which) {
+  if (!dd) return '';
+  if (dd.nodata) {
+    return `<p class="ddi none">起用ブレ DDI
+      <span class="dim">データなし（2023-24 以降に出場が無い）</span></p>`;
+  }
+  const v = which === '25' ? dd.d25 : dd.d3;
+  const p = which === '25' ? dd.p25 : dd.p3;
+  const n = which === '25' ? dd.n25 : dd.n3;
+  const need = which === '25' ? 20 : 40;
+  if (v === null || v === undefined) return '';
+
+  /* 100 がリーグの真ん中。下＝安定、上＝ブレが大きい */
+  const side = v < 100 ? '安定寄り' : 'ブレ大きめ';
+
+  return `<div class="ddi">
+    <div class="v">
+      <span class="num">${v.toFixed(1)}</span>
+      <span class="dim">起用ブレ DDI · リーグ平均 100 · ${esc(side)}</span>
+    </div>
+    ${p === null || p === undefined ? `<p class="dim note">
+        帯内の順位は出していない（この期間の出場が ${n} 試合で、
+        ${need} 試合に足りない）</p>`
+      : `<div class="meter" role="img"
+           aria-label="${esc(dd.band)}分帯の中で ${p} パーセンタイル">
+          <div class="scale">
+            <span class="end">0</span>
+            <span class="track"><i style="left:${p.toFixed(1)}%"></i></span>
+            <span class="end">100</span>
+          </div>
+          <p class="dim note">
+            <strong>${esc(dd.band)} 分帯</strong>の中で
+            <strong>${p.toFixed(0)} パーセンタイル</strong>
+            （0 に近いほど安定・100 に近いほどブレが大きい）${
+            dd.merged ? '・帯を合併して算出' : ''}</p>
+        </div>`}
+  </div>`;
+}
+
+function ddiNote(dd) {
+  if (!dd || dd.nodata) return '';
+  return `<details class="post ddi-note">
+    <summary>DDI の読み方</summary>
+    <div class="sub">
+      <p>
+        1試合ごとの出場時間が、その時点で見込まれる時間からどれだけ
+        散らばったかを指数にしたもの。<strong>100 がリーグの真ん中</strong>で、
+        全体の SD は 7 前後。大きいほど試合ごとの出番が読みにくい。
+      </p>
+      <p>
+        ★ <strong>欠場そのものは入っていない。</strong>
+        「出た試合の出場時間のブレ」なので、ロード管理で休む選手でも
+        出れば決まった時間を踏むなら DDI は小さく出る。
+      </p>
+      <p>
+        ★ <strong>選手どうしを並べるならパーセンタイルの側を見る。</strong>
+        生の DDI は出場時間の水準と完全には独立ではなく（相関 −0.16）、
+        出番の長い選手ほど低めに出る。
+        そのため同じ出場時間帯の中での順位を併記している。
+      </p>
+    </div>
+  </details>`;
+}
+
 function distBlock(car) {
   const d = car.dist;
   if (!d || (!d.s1 && !d.s3)) return '';
@@ -531,8 +599,11 @@ function distBlock(car) {
       1試合ごとの出場時間を2分刻みで数えたもの。レギュラーシーズンのみ。
       平均だけでは「毎試合 30 分」と「40 分と出番なしの往復」を区別できない。
     </p>
-    ${d.s1 ? histSvg(d.s1, d.bin, '直近1シーズン', car.d1, top) : ''}
-    ${d.s3 ? histSvg(d.s3, d.bin, '直近3シーズン', car.d3, top) : ''}
+    ${d.s1 ? histSvg(d.s1, d.bin, '直近1シーズン', car.d1, top)
+      + ddiRow(car.ddi, '25') : ''}
+    ${d.s3 ? histSvg(d.s3, d.bin, '直近3シーズン', car.d3, top)
+      + ddiRow(car.ddi, '3') : ''}
+    ${ddiNote(car.ddi)}
   </section>`;
 }
 

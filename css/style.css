@@ -165,6 +165,40 @@ tbody tr:hover { background: var(--hover); }
 .hist rect { transition: opacity .1s; }
 .hist rect:hover { opacity: .75; }
 
+/* ---------------------------------------------------------- DDI */
+.ddi { margin: -6px 0 22px; }
+.ddi.none { font-size: 13px; margin: -6px 0 22px; }
+.ddi .v { display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap; }
+.ddi .num {
+  font-family: var(--mono); font-size: 22px; font-weight: 700;
+  color: var(--ink);
+}
+.ddi .v .dim { font-size: 12px; }
+.ddi .note { margin: 4px 0 0; font-size: 12px; }
+/* 0〜100 の目盛りに印をひとつ置くだけ。両端を書かないと位置が読めない */
+.ddi .scale {
+  display: flex; align-items: center; gap: 8px;
+  margin-top: 8px; max-width: 340px;
+}
+.ddi .scale .end {
+  font-family: var(--mono); font-size: 11px; color: var(--muted);
+}
+.ddi .track {
+  position: relative; flex: 1; height: 6px;
+  border-radius: 999px; background: var(--hover);
+  border: 1px solid var(--line);
+}
+.ddi .track i {
+  position: absolute; top: 50%; width: 10px; height: 10px;
+  margin: -5px 0 0 -5px; border-radius: 50%;
+  background: var(--accent);
+  /* 棒の上に乗るので地の色で縁取る */
+  box-shadow: 0 0 0 2px var(--bg);
+}
+.ddi-note summary { font-size: 12px; }
+.ddi-note .sub { color: var(--muted); font-size: 12px; max-width: 64ch; }
+.ddi-note .sub p { margin: 0 0 8px; }
+
 /* ポストシーズンは既定で閉じておく */
 details.post { margin-top: 20px; }
 details.post summary {

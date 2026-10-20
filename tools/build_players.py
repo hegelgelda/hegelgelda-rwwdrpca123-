@@ -41,6 +41,10 @@ DIST3 = ("2023-24", "2025-26")
 BIN = 2          # 分
 NBIN = 24        # 0〜46分+。最後の箱は 46 分以上（延長戦があるので上は開く）
 
+# 起用ブレ指数（DDI）。別途計算した成果物をそのまま合流させる。
+# 詳しくは DDI_2627.md。ここでは読んで選手ごとに配るだけで、再計算はしない
+DDI_FILE = os.path.join(HERE, "ddi_2627.parquet")
+
 
 def q(s: str) -> str:
     return " ".join(s.split())
@@ -66,6 +70,45 @@ def pct(made, att, dig=3):
     return round(made / att, dig)
 
 
+def load_ddi() -> dict[int, dict]:
+    """DDI を person_id 引きの辞書にする。
+
+    ★ 生の DDI は出場時間の水準と独立ではない（相関 −0.16、DDI_2627.md §7）。
+      選手どうしを横に並べるのは**帯内パーセンタイル** pct_* の側。
+      生の値は「その選手自身の 1季 と 3季 の比較」までに留める。
+    ★ flag_no_data = 1 は 2023-26 に出場が無く DDI = 100 を置いただけの行。
+      平均値そのものなので、数値として出さず「データなし」にする。
+    """
+    if not os.path.exists(DDI_FILE):
+        print(f"  （{os.path.basename(DDI_FILE)} が無いので DDI は付けない）")
+        return {}
+    import pandas as pd
+    d = pd.read_parquet(DDI_FILE)
+
+    def f(v, dig=1):
+        return None if v is None or v != v else round(float(v), dig)
+
+    out = {}
+    for x in d.itertuples():
+        nodata = int(x.flag_no_data) == 1
+        out[int(x.person_id)] = {
+            "nodata": 1 if nodata else 0,
+            # 1季（2025-26）と3季（2023-24〜2025-26）。分布の2枚と対応する
+            "d25": None if nodata else f(x.DDI_25),
+            "n25": int(x.n_25),
+            "p25": f(x.pct_25),
+            "d3": None if nodata else f(x.DDI_3y),
+            "n3": int(x.n_3y),
+            "p3": f(x.pct_3y),
+            "band": None if nodata else x.band_25,
+            # 帯を合併した / 直近に出場した季の帯で代用した行
+            "merged": int(x.pct_band_merged),
+        }
+    n = sum(1 for v in out.values() if not v["nodata"])
+    print(f"  DDI: {len(out):,} 名（数値あり {n:,} 名）")
+    return out
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--db", default=DEFAULT_DB)
@@ -77,6 +120,8 @@ def main() -> None:
     if os.path.isdir(pdir):
         shutil.rmtree(pdir)
     os.makedirs(pdir, exist_ok=True)
+
+    ddi = load_ddi()
 
     ids = [int(x[0]) for x in con.execute(
         f"select distinct player_id from team_roster where season = '{SEASON}'"
@@ -194,6 +239,7 @@ def main() -> None:
             "seasons": seasons,
             "career": line(career, "通算") if career else None,
             "dist": by_player.get(int(pid)),
+            "ddi": ddi.get(int(pid)),
             "d1": DIST1,
             "d3": f"{DIST3[0]} 〜 {DIST3[1]}",
         }
