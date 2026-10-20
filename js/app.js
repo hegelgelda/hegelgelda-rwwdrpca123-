@@ -494,30 +494,42 @@ function careerTable(car) {
    目盛りの文字まで 0.6 倍になって読めなくなる */
 const narrow = () => window.innerWidth < 560;
 
-function histSvg(h, binW, title, note, top) {
+function histSvg(h, binW, title, note, top, b0, b1) {
   const sm = narrow();
   const W = sm ? 330 : 640, H = sm ? 190 : 176;
   const L = sm ? 30 : 42, R = sm ? 8 : 14, T = 30, B = 30;
   const iw = W - L - R, ih = H - T - B;
   const nb = h.bins.length;
-  const bw = iw / nb;
+  /* ★ 空の箱は描かずに詰める。b0/b1 は2枚で共通なので形は比べられる。
+     出番の短い選手は 0 分側にも試合があるので、一律に切ることはしない */
+  const shown = b1 - b0 + 1;
+  const bw = iw / shown;
 
   /* ★ 上端は2枚で共通。panel ごとに変えると形の比較が歪む */
   const y = (v) => T + ih - (v / top) * ih;
-  const xOf = (min) => L + (min / (binW * nb)) * iw;
+  const xOf = (min) => L + ((min - b0 * binW) / (shown * binW)) * iw;
 
   const bars = h.bins.map((c, i) => {
-    if (!c) return '';
+    if (!c || i < b0 || i > b1) return '';
     const hgt = Math.max(1, ih - (y(c / h.n) - T));
     /* 棒どうしは 2px あけて、地の色が見えるようにする */
     const w = Math.max(1, bw - 2);
     const r = Math.min(3, w / 2);
     const lo = i * binW, hi = i === nb - 1 ? '+' : `–${(i + 1) * binW}`;
-    return `<rect x="${(L + i * bw + 1).toFixed(1)}" y="${y(c / h.n).toFixed(1)}"
+    return `<rect x="${(L + (i - b0) * bw + 1).toFixed(1)}" y="${
+      y(c / h.n).toFixed(1)}"
       width="${w.toFixed(1)}" height="${hgt.toFixed(1)}" rx="${r.toFixed(1)}"
       fill="var(--accent)"><title>${lo}${hi} 分: ${c} 試合（${
       (c / h.n * 100).toFixed(0)}%）</title></rect>`;
   }).join('');
+
+  /* 目盛りは描いた範囲の中の切りのいい分数だけ */
+  const minLo = b0 * binW, minHi = (b1 + 1) * binW;
+  const step = sm ? 12 : 6;
+  const ticks = [];
+  for (let m = Math.ceil(minLo / step) * step; m <= minHi; m += step) {
+    ticks.push(m);
+  }
 
   /* 中央値だけ直に書く。棒ごとに数字は振らない */
   const mx = xOf(h.med);
@@ -541,9 +553,9 @@ function histSvg(h, binW, title, note, top) {
             y2="${T + ih}" class="med"/>
       <text x="${mx.toFixed(1)}" y="${T - 10}" class="tick mid lab">中央値 ${
         h.med}</text>
-      ${(sm ? [0, 24, 48] : [0, 12, 24, 36, 48]).map((m) => `<text x="${xOf(m).toFixed(1)}"
-        y="${T + ih + 16}" class="tick mid">${m === 48 ? '48分' : m}</text>`)
-        .join('')}
+      ${ticks.map((m, i) => `<text x="${xOf(m).toFixed(1)}"
+        y="${T + ih + 16}" class="tick mid">${
+        i === ticks.length - 1 ? m + '分' : m}</text>`).join('')}
     </svg>
   </figure>`;
 }
@@ -819,15 +831,25 @@ function distBlock(car) {
   const peak = Math.max(...[d.s1, d.s3].filter(Boolean)
     .map((h) => Math.max(...h.bins) / h.n));
   const top = Math.max(0.05, Math.ceil(peak * 20) / 20);
+  /* 両端の空の箱を落として横に広げる。2枚で同じ範囲を使う */
+  const hs = [d.s1, d.s3].filter(Boolean);
+  const nb = hs[0].bins.length;
+  let b0 = nb - 1, b1 = 0;
+  for (const h of hs) {
+    for (let i = 0; i < nb; i++) {
+      if (h.bins[i]) { if (i < b0) b0 = i; if (i > b1) b1 = i; }
+    }
+  }
+  if (b0 > b1) { b0 = 0; b1 = nb - 1; }
   return `<section class="dist">
     <h2>出場時間の分布</h2>
     <p class="sub">
       1試合ごとの出場時間を2分刻みで数えたもの。レギュラーシーズンのみ。
       平均だけでは「毎試合 30 分」と「40 分と出番なしの往復」を区別できない。
     </p>
-    ${d.s1 ? histSvg(d.s1, d.bin, '直近1シーズン', car.d1, top)
+    ${d.s1 ? histSvg(d.s1, d.bin, '直近1シーズン', car.d1, top, b0, b1)
       + ddiRow(car.ddi, '25') : ''}
-    ${d.s3 ? histSvg(d.s3, d.bin, '直近3シーズン', car.d3, top)
+    ${d.s3 ? histSvg(d.s3, d.bin, '直近3シーズン', car.d3, top, b0, b1)
       + ddiRow(car.ddi, '3') : ''}
     ${ddiNote(car.ddi)}
   </section>`;

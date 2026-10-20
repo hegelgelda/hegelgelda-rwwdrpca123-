@@ -217,11 +217,21 @@ td .pct {
 .model .tick.lab { fill: var(--ink); }
 .model rect:hover { opacity: .75; }
 
-/* under の確率。ライン（.5 刻み）ごとに1列 */
-table.under { width: auto; font-size: 13px; margin-top: 6px; }
-table.under th, table.under td { padding: 4px 10px; }
-table.under tbody th { color: var(--muted); font-weight: 600; }
+/* under の確率。ライン（.5 刻み）ごとに1列。
+   ここが一番読まれる数字なので、他の表の2倍の字で出す */
+table.under { width: auto; font-size: 26px; margin-top: 10px; }
+table.under th, table.under td { padding: 6px 14px; }
+table.under thead th { font-size: 20px; text-transform: none;
+                       letter-spacing: 0; }
+table.under tbody th { color: var(--muted); font-weight: 600; font-size: 20px; }
+table.under tbody td { font-weight: 700; }
 table.under tbody tr:hover { background: none; }
+@media (max-width: 720px) {
+  /* 幅が足りないので、横に出さず少しだけ縮める */
+  table.under { font-size: 19px; }
+  table.under thead th, table.under tbody th { font-size: 14px; }
+  table.under th, table.under td { padding: 5px 7px; }
+}
 
 /* ---------------------------------------------------------- DDI */
 .ddi { margin: -6px 0 22px; }
