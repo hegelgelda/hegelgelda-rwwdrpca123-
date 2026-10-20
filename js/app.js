@@ -302,7 +302,8 @@ function rosterTable(ps, prev) {
       <th class="n">#</th><th>選手</th><th>Pos</th><th>身長</th>
       <th class="n">体重</th><th class="n">年齢</th><th class="n">年数</th>
       <th class="n">試合</th><th class="n">MPG</th><th class="n">PPG</th>
-      <th class="n">RPG</th><th class="n">APG</th><th class="n">ブレ</th>
+      <th class="n">RPG</th><th class="n">APG</th>
+      <th class="n">ブレ<span class="hdrsub">${esc(prev)}</span></th>
     </tr></thead>
     <tbody>
     ${sorted.map((p) => `<tr>
@@ -563,7 +564,9 @@ function ddiRow(dd, which) {
   return `<div class="ddi">
     <div class="v">
       <span class="num">${v.toFixed(1)}</span>
-      <span class="dim">起用ブレ DDI · リーグ平均 100 · ${esc(side)}</span>
+      <span class="dim">起用ブレ DDI<strong>${
+        which === '25' ? '（1シーズン）' : '（3シーズン）'}</strong>
+        · リーグ平均 100 · ${esc(side)}</span>
     </div>
     ${p === null || p === undefined ? `<p class="dim note">
         帯内の順位は出していない（この期間の出場が ${n} 試合で、
