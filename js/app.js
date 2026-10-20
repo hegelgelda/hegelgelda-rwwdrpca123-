@@ -13,7 +13,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '8f887f51';
+const DATA_V = '71d99fa8';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -65,6 +65,18 @@ function jst(g) {
   if (!g.tj) return '';
   const o = g.tjo || 0;
   return (o === 1 ? '翌' : o === -1 ? '前' : '') + g.tj;
+}
+
+/* ロスター表の「ブレ」セル。DDI と帯内パーセンタイルを縦に積む。
+   ★ 生の DDI だけを並べると出番の長い選手が一律に低く見えるので、
+     パーセンタイルを必ず添える（DDI_2627.md §7） */
+function ddiCell(p) {
+  if (p.ddi === null || p.ddi === undefined) {
+    return '<span class="dim">—</span>';
+  }
+  const pct = (p.ddip === null || p.ddip === undefined)
+    ? '' : `<span class="pct">(${p.ddip.toFixed(0)})</span>`;
+  return `<span class="ddiv">${p.ddi.toFixed(1)}</span>${pct}`;
 }
 
 /* 率は .561 の形で出す（頭の 0 を落とす） */
@@ -290,7 +302,7 @@ function rosterTable(ps, prev) {
       <th class="n">#</th><th>選手</th><th>Pos</th><th>身長</th>
       <th class="n">体重</th><th class="n">年齢</th><th class="n">年数</th>
       <th class="n">試合</th><th class="n">MPG</th><th class="n">PPG</th>
-      <th class="n">RPG</th><th class="n">APG</th>
+      <th class="n">RPG</th><th class="n">APG</th><th class="n">ブレ</th>
     </tr></thead>
     <tbody>
     ${sorted.map((p) => `<tr>
@@ -308,6 +320,7 @@ function rosterTable(ps, prev) {
       <td class="n">${num(p.ppg)}</td>
       <td class="n">${num(p.rpg)}</td>
       <td class="n">${num(p.apg)}</td>
+      <td class="n">${ddiCell(p)}</td>
     </tr>`).join('')}
     </tbody>
   </table></div>
@@ -316,6 +329,16 @@ function rosterTable(ps, prev) {
     <strong>MPG の多い順</strong>に並べている。
     「—」は前季に出場が無い選手（新人・新規契約）で、末尾にまとめている。
     TW = two-way 等の補足契約。
+  </p>
+  <p class="sub" style="margin-top:8px">
+    <strong>ブレ</strong>は起用ブレ指数（DDI、${esc(prev)} の1季）。
+    1試合ごとの出場時間の散らばりで、リーグ平均が 100。
+    小さいほど出番が読める。
+    ★ 出場時間が長い選手ほど低めに出るので、
+    <strong>選手どうしを比べるなら括弧内の帯内パーセンタイル</strong>
+    （同じ出場時間帯の中での順位。0 に近いほど安定）を見ること。
+    試合数が少ない選手は順位を出していない。
+    各選手のページに期間別の値と読み方がある。
   </p>`;
 }
 

@@ -37,6 +37,7 @@
     ├── build_page1.py       public/data1/ を作り直す
     ├── build_players.py     選手別の成績 JSON を作り直す
     ├── stamp_assets.py      index.html の css/js に ?v=ハッシュ を付ける
+    ├── ddi.py               その読み込み（build_page1 / build_players で共有）
     ├── ddi_2627.parquet     起用ブレ指数（別計算の成果物。526名 x 26列）
     ├── seed_ci_db.py        CI 用の空 DuckDB を作る
     ├── team_dim.csv         その種データ（30チーム）
@@ -185,7 +186,8 @@ python tools/fetch_rosters.py  --db C:/nba/nba.duckdb --season 2026-27
   生のログではなく**集計済みの箱**を配る（1人あたり +0.2 KB）。
 - 画面が狭いときは SVG の **viewBox 自体を取り直す**。
   横 640 のまま 375px に縮めると目盛りの文字まで 0.6 倍になって読めない。
-- **起用ブレ指数（DDI）** は分布の図の真下に出す。別途計算した
+- **起用ブレ指数（DDI）** はロスター表（1季版）と選手ページ（1季・3季）の
+  両方に出す。ロスター表は `DDI(帯内パーセンタイル)` の形。分布の図の真下にも出す。別途計算した
   `tools/ddi_2627.parquet` を `build_players.py` が選手ごとに配るだけで、
   ここでは再計算しない。定義と検算は `DDI_2627.md`（このリポジトリ外）。
   `person_id` は NBA の player_id と同じで、526名が過不足なく一致する。
@@ -200,6 +202,10 @@ python tools/fetch_rosters.py  --db C:/nba/nba.duckdb --season 2026-27
   - パーセンタイルは試合数の下限（1季 20 / 3季 40）を満たす選手のみ
 - 選手ページの**ポストシーズンは `<details>` で畳んである**。
   開けば表示されるが、既定ではレギュラーシーズンと通算だけを出す。
+- **多チーム在籍の季のチーム順は時系列**。`string_agg(distinct ...)` は
+  順序が不定で、ビルドのたびに `ATL/GSW` と `GSW/ATL` が入れ替わって
+  無意味な差分が出ていた。`list_distinct(list(... order by game_date))` に
+  変えて、再実行しても同じ出力になることを確認済み。
 - **選手ページは 1人1ファイル。** 全選手を1つの JSON にすると 0.9 MB を
   毎回読むことになるので `players/<player_id>.json` に割った。
   2021-22 以降に出場が無い 74名はファイルを作らず、

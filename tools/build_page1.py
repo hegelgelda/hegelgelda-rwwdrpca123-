@@ -19,6 +19,8 @@ from datetime import datetime, timezone
 
 import duckdb
 
+import ddi as ddi_mod
+
 HERE = os.path.dirname(os.path.abspath(__file__))        # tools/
 REPO = os.path.abspath(os.path.join(HERE, ".."))
 # nba.duckdb はリポジトリに入れない。外から場所を渡す
@@ -150,6 +152,10 @@ def main() -> None:
     })
 
     # ---------------------------------------------------------- rosters
+    # 起用ブレ指数。ロスター表にも 1季版（DDI_25）を出す。
+    # ★ 生の DDI は出場時間の水準と独立ではないので、帯内パーセンタイルも
+    #   一緒に配ってサイト側で併記する（DDI_2627.md §7）
+    ddi = ddi_mod.load()
     # 前季の平均成績（レギュラーのみ）。無い選手は null。
     # ★ 試合ログの表が無い（CI の小さい DB）ときは、
     #   既存の rosters.json から player_id 引きで持ってくる。
@@ -195,6 +201,7 @@ def main() -> None:
         else:
             p = (prev.loc[x.player_id].to_dict()
                  if x.player_id in prev.index else {})
+        dd = ddi.get(int(x.player_id))
         by.setdefault(x.tri, []).append({
             "id": int(x.player_id),
             "name": x.player_name,
@@ -207,6 +214,10 @@ def main() -> None:
             "school": clean(x.school),
             "acq": clean(x.how_acquired),
             "tw": int(x.two_way),
+            # 起用ブレ（1季版）。pct は帯内の順位、band はその帯
+            "ddi": (dd or {}).get("d25"),
+            "ddip": (dd or {}).get("p25"),
+            "ddib": (dd or {}).get("band"),
             # 前季の成績（無ければ null）
             "g": int(p["g"]) if p.get("g") is not None else None,
             "mpg": clean(p.get("mpg")) if p else None,

@@ -165,6 +165,13 @@ tbody tr:hover { background: var(--hover); }
 .hist rect { transition: opacity .1s; }
 .hist rect:hover { opacity: .75; }
 
+/* ロスター表の「ブレ」列。DDI と帯内パーセンタイル */
+td .ddiv { font-family: var(--mono); }
+td .pct {
+  color: var(--muted); font-size: 11px; font-family: var(--mono);
+  margin-left: 4px;
+}
+
 /* ---------------------------------------------------------- DDI */
 .ddi { margin: -6px 0 22px; }
 .ddi.none { font-size: 13px; margin: -6px 0 22px; }
