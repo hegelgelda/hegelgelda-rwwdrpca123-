@@ -312,3 +312,39 @@ details.post[open] summary { margin-bottom: 12px; }
   .game .meta { grid-column: 2; text-align: left; }
   th, td { padding: 6px 5px; }
 }
+
+/* ------------------------------------------------- 日次レポート */
+
+ul.reports { list-style: none; padding: 0; margin: 1.2em 0; }
+ul.reports li {
+  padding: 10px 2px; border-bottom: 1px solid var(--line);
+  display: flex; gap: 14px; align-items: baseline; flex-wrap: wrap;
+}
+ul.reports li:hover { background: var(--hover); }
+ul.reports a { font-weight: 600; font-size: 1.05em; }
+ul.reports .sub { margin: 0; color: var(--muted); }
+
+/* publish 側（nba_live/tools/fetch_reports.py）が Markdown から作った
+   HTML をそのまま流し込む場所。表が多いので本体の表と見た目を揃える */
+.report h2 {
+  font-size: 1.15rem; margin: 1.9em 0 .6em;
+  border-bottom: 1px solid var(--line); padding-bottom: .35em;
+}
+.report h3 { font-size: 1rem; margin: 1.5em 0 .5em; color: var(--muted); }
+.report p { margin: .7em 0; }
+.report table {
+  border-collapse: collapse; margin: .9em 0; font-size: .9em;
+  background: var(--panel);
+}
+.report th, .report td {
+  border: 1px solid var(--line); padding: 5px 10px; text-align: left;
+}
+.report th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+.report tbody tr:hover { background: var(--hover); }
+.report code {
+  background: var(--hover); color: var(--ink);
+  padding: 1px 5px; border-radius: 3px; font-family: var(--mono);
+  font-size: .9em;
+}
+.report strong { color: var(--ink); font-weight: 700; }
+.report ul { padding-left: 1.3em; }

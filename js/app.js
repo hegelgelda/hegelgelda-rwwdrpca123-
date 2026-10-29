@@ -13,7 +13,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'a2136963';
+const DATA_V = 'e1191fa8';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -867,9 +867,53 @@ function go(hash) {
   else location.hash = hash;
 }
 
+/* ------------------------------------------------------------- レポート */
+
+/* 日次レポート。中身は publish 側（nba_live/tools/fetch_reports.py）が
+   Markdown から HTML にして JSON に詰めている。
+   ★ ここで Markdown を解釈しない。サイトは依存ライブラリなしを保つ。 */
+
+async function renderReports() {
+  const idx = await load('reports_index');
+  const rows = (idx.reports || []);
+  if (!rows.length) {
+    view.innerHTML = '<h1>日次レポート</h1><p class="sub">まだ無い。</p>';
+    return;
+  }
+  view.innerHTML = `
+    <h1>日次レポート</h1>
+    <p class="sub">${rows.length} 日分。ET の試合日ごとに、インジャリーレポートの
+      status 変化・ラインの動き・報道を並べたもの。</p>
+    <ul class="reports">
+      ${rows.map((r) => `
+        <li>
+          <a href="#/report/${esc(r.day)}">${esc(r.day)}</a>
+          ${r.summary ? `<span class="sub">${esc(r.summary)}</span>` : ''}
+        </li>`).join('')}
+    </ul>`;
+}
+
+async function renderReport(day) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+    view.innerHTML = '<p class="err">日付が不正。</p>';
+    return;
+  }
+  let rep;
+  try {
+    rep = await load(`reports/${day}`);
+  } catch (e) {
+    view.innerHTML = `<p class="err">${esc(day)} のレポートが無い。
+      <a href="#/reports">一覧へ</a></p>`;
+    return;
+  }
+  view.innerHTML = `
+    <p class="sub"><a href="#/reports">&larr; レポート一覧</a></p>
+    <div class="report">${rep.html}</div>`;
+}
+
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const nav = { schedule: 'on', teams: '' };
+  const nav = { schedule: 'on', teams: '', reports: '' };
   try {
     view.innerHTML = '<p class="loading">読み込み中…</p>';
     if (parts[0] === 'teams') {
@@ -881,6 +925,12 @@ async function route() {
     } else if (parts[0] === 'p' && parts[1]) {
       nav.schedule = ''; nav.teams = 'on';
       await renderPlayer(parts[1]);
+    } else if (parts[0] === 'reports') {
+      nav.schedule = ''; nav.reports = 'on';
+      await renderReports();
+    } else if (parts[0] === 'report' && parts[1]) {
+      nav.schedule = ''; nav.reports = 'on';
+      await renderReport(parts[1]);
     } else if (parts[0] === 'w') {
       await renderWeek(parts[1]);
     } else if (parts[0] === 'd' && parts[1]) {
