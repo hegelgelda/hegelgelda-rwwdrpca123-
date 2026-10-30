@@ -20,6 +20,7 @@
 | クォーター別の成績 | `player_quarter_fixed` + 出場区間 + PBP のアシスト | 画面で Q1〜Q4 に切り替える |
 | 得点推移 | `pbp` の得点が動いた行 | |
 | injury report | VPS の `injury_games.json` | **初出**と最終の両方 |
+| 試合前オッズの推移 | VPS の `odds_games.json` | Kalshi（15分）とブック 9 社 |
 | 実際の欠場 | `game_inactive` | 試合後に確定したもの |
 
 ★ **クォーター別得点は3ソースが 1〜2% 食い違う**（直近の季ほど増える）。
@@ -73,10 +74,12 @@ PBP_DB = Path(os.environ.get("NBA_PBP_DUCKDB") or r"C:\nba\nba_pbp.duckdb")
 OUT = REPO / "public" / "data1"
 SEASON = "2026-27"
 
-# VPS から取ってくる injury の中間ファイル
+# VPS から取ってくる中間ファイル（injury とオッズ）
 HOST = os.environ.get("NBA_LIVE_HOST", "root@155.138.226.166")
 INJ_REMOTE = "/opt/nba/reports/injury_games.json"
 INJ_LOCAL = Path(r"C:\nba\reports\injury_games.json")
+ODDS_REMOTE = "/opt/nba/reports/odds_games.json"
+ODDS_LOCAL = Path(r"C:\nba\reports\odds_games.json")
 _SYS = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "OpenSSH"
 SSH = str(_SYS / "ssh.exe") if (_SYS / "ssh.exe").exists() else "ssh"
 SCP = str(_SYS / "scp.exe") if (_SYS / "scp.exe").exists() else "scp"
@@ -107,27 +110,31 @@ def secs(ms):
         return None
 
 
-def pull_injury() -> dict:
-    """VPS で export_injury_games.py を走らせて JSON を取ってくる。"""
+def pull(script: str, remote: str, local: Path) -> dict:
+    """VPS で書き出しスクリプトを走らせ、できた JSON を scp で取ってくる。
+
+    ★ 失敗しても落とさない。VPS に届かない日でも、試合ページ自体は
+      モデル側のデータだけで作れる（オッズと injury の欄が空になるだけ）。
+    """
     cmd = ("cd /opt/nba && sudo -u nba /opt/nba/venv/bin/python -I "
-           "nba_live/tools/export_injury_games.py")
+           "nba_live/tools/%s" % script)
     r = subprocess.run([SSH, "-o", "BatchMode=yes", "-o", "ConnectTimeout=20",
                         HOST, cmd], capture_output=True,
-                       encoding="utf-8", errors="replace", timeout=300)
+                       encoding="utf-8", errors="replace", timeout=600)
     if r.returncode != 0:
-        print("  [warn] VPS 側の書き出しに失敗: %s" % (r.stderr or "")[:160])
+        print("  [warn] VPS 側の書き出しに失敗 (%s): %s" % (script, (r.stderr or "")[:140]))
     else:
         print("  VPS: %s" % (r.stdout or "").strip())
-    INJ_LOCAL.parent.mkdir(parents=True, exist_ok=True)
+    local.parent.mkdir(parents=True, exist_ok=True)
     r2 = subprocess.run([SCP, "-q", "-o", "BatchMode=yes",
-                         "%s:%s" % (HOST, INJ_REMOTE), str(INJ_LOCAL)],
+                         "%s:%s" % (HOST, remote), str(local)],
                         capture_output=True, encoding="utf-8",
-                        errors="replace", timeout=300)
+                        errors="replace", timeout=600)
     if r2.returncode != 0:
-        print("  [warn] scp に失敗: %s" % (r2.stderr or "")[:160])
-    if not INJ_LOCAL.exists():
+        print("  [warn] scp に失敗 (%s): %s" % (remote, (r2.stderr or "")[:140]))
+    if not local.exists():
         return {}
-    with open(INJ_LOCAL, encoding="utf-8") as f:
+    with open(local, encoding="utf-8") as f:
         return json.load(f).get("games", {})
 
 
@@ -258,7 +265,7 @@ def quarter_box(con, gid, mx, box, stints):
     return out
 
 
-def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
+def build_one(con, gid, gdate, tip, home, away, arena, city, inj, odds):
     # ---- 公式のクォーター別（Q1-4）
     line = {}
     for tri, q1, q2, q3, q4 in con.execute("""
@@ -395,6 +402,9 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
         where g.game_id = ? order by 1, 3""", [gid]).fetchall():
         inactive.setdefault(tri, []).append(("%s %s" % (first or "", fam or "")).strip())
 
+    # ---- 試合前オッズの推移（VPS）
+    od = odds.get(gid) or {}
+
     # ---- injury report（VPS）
     injury = {}
     for p in (inj.get(gid, {}) or {}).get("players", []):
@@ -418,6 +428,7 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
         "check": check, "stint_ok": stint_ok, "stint_src": stint_src,
         "box": box, "qbox": qbox, "stints": stints, "score_path": path,
         "inactive": inactive, "injury": injury,
+        "odds": od.get("series") or {}, "odds_close": od.get("close") or {},
     }
 
 
@@ -426,10 +437,12 @@ def main() -> None:
     ap.add_argument("--season", default=SEASON)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--game", default=None)
-    ap.add_argument("--no-injury", action="store_true")
+    ap.add_argument("--no-injury", action="store_true",
+                    help="VPS に取りに行かない（injury とオッズの欄が空になる）")
     a = ap.parse_args()
 
-    inj = {} if a.no_injury else pull_injury()
+    inj = {} if a.no_injury else pull("export_injury_games.py", INJ_REMOTE, INJ_LOCAL)
+    odds = {} if a.no_injury else pull("export_odds_games.py", ODDS_REMOTE, ODDS_LOCAL)
     gdir = OUT / "games"
     gdir.mkdir(parents=True, exist_ok=True)
 
@@ -444,7 +457,8 @@ def main() -> None:
         fp = gdir / ("%s.json" % gid)
         need = a.all or a.game or not fp.exists()
         if need:
-            g = build_one(con, gid, gdate, tip, home, away, arena, city, inj)
+            g = build_one(con, gid, gdate, tip, home, away, arena, city,
+                          inj, odds)
             with open(fp, "w", encoding="utf-8") as f:
                 json.dump(g, f, ensure_ascii=False, separators=(",", ":"))
             made += 1

@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '8798c2c0';
+const DATA_V = '95ac40dd';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -1152,6 +1152,91 @@ function injuryTable(g, tri) {
     ${out.length ? `<p class="sub">実際の欠場: ${out.map(esc).join(' / ')}</p>` : ''}`;
 }
 
+/* ---- 試合前のオッズ -------------------------------------------------- */
+
+const ODDS_META = {
+  ml:     { label: 'マネーライン', unit: '%',
+            note: (g) => `${esc(g.home)}（ホーム）が勝つ確率。`, ref: 50 },
+  spread: { label: 'スプレッド', unit: '点',
+            note: (g) => `${esc(g.home)}（ホーム）のハンディ。負ほどホーム有利。`,
+            ref: 0 },
+  total:  { label: 'トータル', unit: '点',
+            note: () => '両チームの合計得点。', ref: null },
+};
+
+const hhmm = (min) => {
+  const m = Math.abs(min);
+  return m >= 60 ? `${Math.round(m / 60)}時間前` : `${m}分前`;
+};
+
+/* 折れ線。`series` は [{name, pts:[[x,y]], cls, dot}]。x は試合開始からの分（負） */
+function lineChart(series, ref, unit) {
+  const live = series.filter((s) => s.pts && s.pts.length);
+  if (!live.length) return '<p class="empty">この系列のデータが無い。</p>';
+  const W = 1000, H = 230, L = 52, R = 12, T = 12, B = 26;
+  const xs = live.flatMap((s) => s.pts.map((p) => p[0]));
+  const ys = live.flatMap((s) => s.pts.map((p) => p[1]));
+  let x0 = Math.min(...xs), x1 = Math.max(...xs, 0);
+  if (x1 === x0) x1 = x0 + 1;
+  let y0 = Math.min(...ys), y1 = Math.max(...ys);
+  const pad = (y1 - y0) * 0.12 || 1;
+  y0 -= pad; y1 += pad;
+  /* ★ 基準線（50% / 0点）に合わせて縦軸を広げない。線が基準から離れている試合で
+     上下に空白ができて、肝心の動きが潰れる（スプレッド -7 の試合で実際にそうなった）。
+     基準線は範囲に入っているときだけ引く */
+  const showRef = (ref !== null && ref !== undefined && ref >= y0 && ref <= y1);
+  const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - R);
+  const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
+
+  /* 目盛り。横は 12 時間ごと、縦は 4 本 */
+  const step = (x1 - x0) > 1500 ? 720 : (x1 - x0) > 600 ? 360 : 120;
+  const xt = [];
+  for (let v = 0; v >= x0; v -= step) xt.push(v);
+  const yt = [0, 1, 2, 3, 4].map((k) => y0 + (y1 - y0) * k / 4);
+
+  const grid = xt.map((v) => `<line class="gl" x1="${X(v).toFixed(1)}" y1="${T}"
+      x2="${X(v).toFixed(1)}" y2="${H - B}"/>`).join('')
+    + yt.map((v) => `<line class="gl" x1="${L}" y1="${Y(v).toFixed(1)}"
+      x2="${W - R}" y2="${Y(v).toFixed(1)}"/>`).join('');
+  const refLine = !showRef ? ''
+    : `<line class="zero" x1="${L}" y1="${Y(ref).toFixed(1)}"
+         x2="${W - R}" y2="${Y(ref).toFixed(1)}"/>`;
+  const lines = live.map((s) => {
+    const d = s.pts.map((p) => `${X(p[0]).toFixed(1)},${Y(p[1]).toFixed(1)}`).join(' ');
+    const dots = s.dot ? s.pts.map((p) =>
+      `<circle class="pt ${s.cls}" cx="${X(p[0]).toFixed(1)}"
+         cy="${Y(p[1]).toFixed(1)}" r="3"/>`).join('') : '';
+    return `<polyline class="ln ${s.cls}" points="${d}"/>${dots}`;
+  }).join('');
+  const ylab = yt.map((v) => `<text class="ax" x="${L - 6}" y="${(Y(v) + 4).toFixed(1)}"
+      text-anchor="end">${v.toFixed(Math.abs(v) >= 100 ? 0 : 1)}</text>`).join('');
+  /* ★ 右端は text-anchor:middle だと枠の外に出て切れる */
+  const xlab = xt.map((v) => `<text class="ax" x="${X(v).toFixed(1)}" y="${H - 8}"
+      text-anchor="${v === 0 ? 'end' : 'middle'}">${
+        v === 0 ? 'ティップ' : hhmm(v)}</text>`).join('');
+
+  const legend = live.map((s) =>
+    `<span class="lg ${s.cls}">${esc(s.name)}</span>`).join('');
+  return `<svg class="odds" viewBox="0 0 ${W} ${H}">
+      ${grid}${refLine}${lines}${ylab}${xlab}
+    </svg>
+    <p class="sub legend">${legend}　単位: ${esc(unit)}</p>`;
+}
+
+function oddsPane(g, key) {
+  const meta = ODDS_META[key];
+  const d = (g.odds || {})[key] || {};
+  const series = [
+    { name: 'Kalshi（15 分刻み）', pts: d.kalshi, cls: 'k' },
+    { name: 'ブック 9 社の中央値', pts: d.book, cls: 'b', dot: true },
+  ];
+  const close = (g.odds_close || {})[key];
+  return `<p class="sub">${meta.note(g)}
+      ${close === undefined || close === null ? ''
+        : `<strong>ティップ直前 ${close}${esc(meta.unit)}</strong>`}</p>
+    ${lineChart(series, meta.ref, meta.unit)}`;
+}
+
 async function renderGame(gid) {
   let g;
   try {
@@ -1213,6 +1298,17 @@ async function renderGame(gid) {
          交代記録から推定するため、合わない試合は出すと誤りになる。
          公式のローテーション記録でも埋まらなかった。</p>`}
 
+    <h2>試合前のオッズ</h2>
+    ${Object.keys(g.odds || {}).length ? `
+      <div class="qtabs" id="otabs">
+        ${Object.keys(ODDS_META).filter((k) => (g.odds || {})[k])
+          .map((k, n) => `<button class="${n ? '' : 'on'}" data-o="${k}">${
+            ODDS_META[k].label}</button>`).join('')}
+      </div>
+      <div id="oddswrap"></div>`
+      : `<p class="empty">この試合のオッズは無い。収集を始めたのが
+         2026-10-23 なので、それより前の試合には記録がない。</p>`}
+
     <h2>injury report</h2>
     ${[g.away, g.home].map((t) => injuryTable(g, t)).join('')}
 
@@ -1223,6 +1319,20 @@ async function renderGame(gid) {
     </div>
     <div id="boxwrap"></div>
   `;
+
+  /* オッズの切り替え。既定はマネーライン */
+  const ow = document.getElementById('oddswrap');
+  if (ow) {
+    const drawOdds = (key) => { ow.innerHTML = oddsPane(g, key); };
+    drawOdds(Object.keys(ODDS_META).find((k) => (g.odds || {})[k]));
+    document.getElementById('otabs').onclick = (e) => {
+      const b = e.target.closest('button[data-o]');
+      if (!b) return;
+      document.querySelectorAll('#otabs button').forEach(
+        (x) => { x.className = x === b ? 'on' : ''; });
+      drawOdds(b.dataset.o);
+    };
+  }
 
   /* クォーターの切り替え。既定は「全体」で、押した枠だけ描き直す */
   const wrap = document.getElementById('boxwrap');

@@ -473,3 +473,28 @@ table.injtab { font-size: 13px; }
   background: var(--accent-soft); color: var(--accent);
   border-color: var(--accent);
 }
+
+/* 試合前のオッズ */
+svg.odds {
+  width: 100%; height: auto; margin: 10px 0 2px;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: var(--radius);
+}
+svg.odds .gl { stroke: var(--line); stroke-dasharray: 3 4;
+               vector-effect: non-scaling-stroke; }
+svg.odds .zero { stroke: var(--muted); stroke-width: 1;
+                 vector-effect: non-scaling-stroke; }
+svg.odds .ln { fill: none; stroke-width: 1.8; vector-effect: non-scaling-stroke; }
+svg.odds .ln.k { stroke: var(--accent); }
+svg.odds .ln.b { stroke: var(--warn); stroke-dasharray: 5 4; }
+svg.odds .pt.b { fill: var(--warn); }
+svg.odds .ax { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+.legend .lg { margin-right: 14px; font-weight: 600; }
+.legend .lg::before {
+  content: ''; display: inline-block; width: 14px; height: 2px;
+  margin-right: 5px; vertical-align: 4px;
+}
+.legend .lg.k { color: var(--accent); }
+.legend .lg.k::before { background: var(--accent); }
+.legend .lg.b { color: var(--warn); }
+.legend .lg.b::before { background: var(--warn); }
