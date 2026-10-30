@@ -365,6 +365,15 @@ ul.reports .sub { margin: 0; color: var(--muted); }
 .game .match a.result .tri.win,
 .game .match a.result .pts.win { color: var(--ink); font-weight: 700; }
 .game .match a.result .at { color: var(--line); margin: 0 2px; }
+/* 個別ページを作っていない試合。スコアだけ出してリンクにしない */
+.game .match .result.nolink {
+  display: inline-flex; align-items: baseline; gap: 7px; font-weight: 600;
+}
+.game .match .result.nolink .tri { color: var(--muted); }
+.game .match .result.nolink .tri.win,
+.game .match .result.nolink .pts.win { color: var(--ink); font-weight: 700; }
+.game .match .result.nolink .pts { font-family: var(--mono); color: var(--muted); }
+.game .match .result.nolink .at { color: var(--line); margin: 0 2px; }
 
 .gamehead {
   display: flex; align-items: center; justify-content: center; gap: 18px;

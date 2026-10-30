@@ -7,6 +7,7 @@
     python tools/build_games.py --all           # 全部作り直す
     python tools/build_games.py --no-injury     # VPS に取りに行かない
     python tools/build_games.py --game 0022600001
+    python tools/build_games.py --exclude ''        # 除外せず全試合ぶん作る
 
 ## 何を載せるか
 
@@ -73,6 +74,14 @@ DB = Path(os.environ.get("NBA_DUCKDB") or r"C:\nba\nba.duckdb")
 PBP_DB = Path(os.environ.get("NBA_PBP_DUCKDB") or r"C:\nba\nba_pbp.duckdb")
 OUT = REPO / "public" / "data1"
 SEASON = "2026-27"
+
+# ★ 容量を抑えるため、この 6 チームが絡む試合は**個別ページを作らない**
+#   （2026-10-30 に指定）。今季の実測で 71 試合中 26 試合（37%）が該当し、
+#   季を通すと約 32 MB -> 20 MB になる。
+#   日程の一覧には最終スコアだけ残す（索引は 1 試合 70 バイト程度で効かない）。
+#   `BRK` は Basketball-Reference 式の略号。こちらの tricode は `BKN`。
+EXCLUDE_TRI = {"CHI", "BKN", "NOP", "SAC", "UTA", "MIL"}
+TRI_ALIAS = {"BRK": "BKN", "PHO": "PHX", "GS": "GSW", "NO": "NOP", "NY": "NYK"}
 
 # VPS から取ってくる中間ファイル（injury とオッズ）
 HOST = os.environ.get("NBA_LIVE_HOST", "root@155.138.226.166")
@@ -437,9 +446,14 @@ def main() -> None:
     ap.add_argument("--season", default=SEASON)
     ap.add_argument("--all", action="store_true")
     ap.add_argument("--game", default=None)
+    ap.add_argument("--exclude", default=",".join(sorted(EXCLUDE_TRI)),
+                    help="個別ページを作らないチーム（カンマ区切り。'' で全試合）")
     ap.add_argument("--no-injury", action="store_true",
                     help="VPS に取りに行かない（injury とオッズの欄が空になる）")
     a = ap.parse_args()
+
+    exclude = {TRI_ALIAS.get(x.strip().upper(), x.strip().upper())
+               for x in (a.exclude or "").split(",") if x.strip()}
 
     inj = {} if a.no_injury else pull("export_injury_games.py", INJ_REMOTE, INJ_LOCAL)
     odds = {} if a.no_injury else pull("export_odds_games.py", ODDS_REMOTE, ODDS_LOCAL)
@@ -452,9 +466,29 @@ def main() -> None:
         rows = [r for r in rows if r[0] == a.game]
     print("対象 %d 試合" % len(rows))
 
-    index, made, total = [], 0, 0
+    index, made, total, skipped, removed = [], 0, 0, 0, 0
     for gid, gdate, tip, home, away, arena, city in rows:
         fp = gdir / ("%s.json" % gid)
+        if {home, away} & exclude:
+            # ★ 除外した試合のファイルが残っていたら消す。残すと索引から
+            #   辿れないのに容量だけ食う（指定を変えたときに必ず起きる）
+            if fp.exists():
+                fp.unlink()
+                removed += 1
+            skipped += 1
+            sc = con.execute(
+                "select team_abbreviation, sum(pts) from player_game_base "
+                "where game_id = ? group by 1", [gid]).fetchall()
+            pts = {t: int(v) for t, v in sc}
+            np_ = con.execute(
+                "select coalesce(max(period), 4) from p.team_quarter where game_id = ?",
+                [gid]).fetchone()[0]
+            index.append({
+                "id": gid, "d": str(gdate)[:10], "a": away, "h": home,
+                "ap": pts.get(away), "hp": pts.get(home), "np": int(np_),
+                "p": 0,   # 個別ページ無し
+            })
+            continue
         need = a.all or a.game or not fp.exists()
         if need:
             g = build_one(con, gid, gdate, tip, home, away, arena, city,
@@ -477,9 +511,12 @@ def main() -> None:
     with open(OUT / "games_index.json", "w", encoding="utf-8") as f:
         json.dump({"season": a.season, "games": index}, f,
                   ensure_ascii=False, separators=(",", ":"))
-    print("書いた %d / 全 %d 試合 / 合計 %.1f MB（1試合 %.1f KB）"
-          % (made, len(index), total / 1e6,
-             total / 1024 / max(1, len(index))))
+    npage = len(index) - skipped
+    print("書いた %d / ページあり %d / 除外 %d（%s）%s"
+          % (made, npage, skipped, ",".join(sorted(exclude)) or "なし",
+             " / 消した %d" % removed if removed else ""))
+    print("合計 %.2f MB（ページ 1 件 %.1f KB）"
+          % (total / 1e6, total / 1024 / max(1, npage)))
     print("索引: %s" % (OUT / "games_index.json"))
 
 

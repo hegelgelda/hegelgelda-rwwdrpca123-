@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '95ac40dd';
+const DATA_V = '3253535c';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -229,19 +229,25 @@ function gameRow(g) {
                  && r.hp !== null && r.hp !== undefined;
   const ot = done && r.np > 4
     ? `<span class="badge">OT${r.np - 4 > 1 ? r.np - 4 : ''}</span>` : '';
+  /* ★ `p: 0` は「個別ページを作っていない試合」。容量のため一部のチームが
+     絡む試合はページを作っていない（tools/build_games.py の EXCLUDE_TRI）。
+     スコアは索引にあるので出すが、リンクにはしない */
+  const page = done && r.p !== 0;
+  const score = `<span class="tri${r.ap > r.hp ? ' win' : ''}">${esc(g.a)}</span>
+     <span class="pts${r.ap > r.hp ? ' win' : ''}">${r.ap}</span>
+     <span class="at">－</span>
+     <span class="pts${r.hp > r.ap ? ' win' : ''}">${r.hp}</span>
+     <span class="tri${r.hp > r.ap ? ' win' : ''}">${esc(g.h)}</span>`;
   /* 終わった試合は対戦の部分がそのまま試合ページへの入口。
      まだの試合は従来どおりチームページへ */
-  const match = done
-    ? `<a class="result" href="#/game/${esc(g.game_id)}">
-         <span class="tri${r.ap > r.hp ? ' win' : ''}">${esc(g.a)}</span>
-         <span class="pts${r.ap > r.hp ? ' win' : ''}">${r.ap}</span>
-         <span class="at">－</span>
-         <span class="pts${r.hp > r.ap ? ' win' : ''}">${r.hp}</span>
-         <span class="tri${r.hp > r.ap ? ' win' : ''}">${esc(g.h)}</span>
-       </a>${ot}`
-    : `<a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
-       <span class="at">＠</span>
-       <a href="#/team/${esc(g.h)}">${esc(g.h)}</a>`;
+  const match = page
+    ? `<a class="result" href="#/game/${esc(g.game_id)}">${score}</a>${ot}`
+    : done
+      ? `<span class="result nolink" title="この試合は個別ページを作っていない"
+           >${score}</span>${ot}`
+      : `<a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
+         <span class="at">＠</span>
+         <a href="#/team/${esc(g.h)}">${esc(g.h)}</a>`;
   return `<div class="game${done ? ' is-done' : ''}">
     <div class="tip">
       <span class="et">${esc(g.t || '')}</span>
@@ -1242,7 +1248,9 @@ async function renderGame(gid) {
   try {
     g = await load(`games/${gid}`);
   } catch (e) {
-    view.innerHTML = `<p class="err">${esc(gid)} の結果が無い。
+    /* 容量のため一部のチームが絡む試合はページを作っていない。
+       日程からはリンクしないが、URL を直打ちされることはある */
+    view.innerHTML = `<p class="err">${esc(gid)} の個別ページは作っていない。
       <a href="#/">日程へ</a></p>`;
     return;
   }
