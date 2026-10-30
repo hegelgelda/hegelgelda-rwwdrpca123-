@@ -4,6 +4,7 @@
  *   #/            日程（日付ごと）
  *   #/teams       チーム一覧
  *   #/team/DEN    チームのロスターと日程
+ *   #/game/0022600001  試合の結果（クォーター別・ラインナップ推移・injury）
  *
  * データは public/data1/ の JSON を1回ずつ読んで使い回す。
  * duckdb も Parquet も使わない（合計 285KB）。
@@ -13,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'fff94f36';
+const DATA_V = '226ae39a';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -24,6 +25,21 @@ async function load(name) {
   if (!res.ok) throw new Error(`${name}.json が読めない (${res.status})`);
   cache[name] = await res.json();
   return cache[name];
+}
+
+/* 終わった試合の最終スコア。games_index.json を1回読んで使い回す。
+   ★ 無くても日程は出す。シーズン頭で1試合も終わっていないときや、
+     JSON を作り直す前でも日程が壊れないように、失敗は空で飲む */
+let RESULTS = null;
+async function results() {
+  if (RESULTS) return RESULTS;
+  try {
+    const ix = await load('games_index');
+    RESULTS = Object.fromEntries(ix.games.map((g) => [g.id, g]));
+  } catch (e) {
+    RESULTS = {};
+  }
+  return RESULTS;
 }
 
 /* ------------------------------------------------------------- 小道具 */
@@ -87,6 +103,7 @@ const pc = (v) => (v === null || v === undefined)
 
 async function renderSchedule(dateArg) {
   const sc = await load('schedule');
+  await results();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -145,6 +162,7 @@ async function renderSchedule(dateArg) {
 
 async function renderWeek(dateArg) {
   const sc = await load('schedule');
+  await results();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -204,16 +222,33 @@ async function renderWeek(dateArg) {
   document.getElementById('day').onclick = () => go('#/');
 }
 
+/* ★ `.map(gameRow)` で呼ぶので引数を増やせない。結果は RESULTS から引く */
 function gameRow(g) {
-  return `<div class="game">
+  const r = (RESULTS || {})[g.game_id];
+  const done = r && r.ap !== null && r.ap !== undefined
+                 && r.hp !== null && r.hp !== undefined;
+  const ot = done && r.np > 4
+    ? `<span class="badge">OT${r.np - 4 > 1 ? r.np - 4 : ''}</span>` : '';
+  /* 終わった試合は対戦の部分がそのまま試合ページへの入口。
+     まだの試合は従来どおりチームページへ */
+  const match = done
+    ? `<a class="result" href="#/game/${esc(g.game_id)}">
+         <span class="tri${r.ap > r.hp ? ' win' : ''}">${esc(g.a)}</span>
+         <span class="pts${r.ap > r.hp ? ' win' : ''}">${r.ap}</span>
+         <span class="at">－</span>
+         <span class="pts${r.hp > r.ap ? ' win' : ''}">${r.hp}</span>
+         <span class="tri${r.hp > r.ap ? ' win' : ''}">${esc(g.h)}</span>
+       </a>${ot}`
+    : `<a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
+       <span class="at">＠</span>
+       <a href="#/team/${esc(g.h)}">${esc(g.h)}</a>`;
+  return `<div class="game${done ? ' is-done' : ''}">
     <div class="tip">
       <span class="et">${esc(g.t || '')}</span>
       <span class="jst">${esc(jst(g))}</span>
     </div>
     <div class="match">
-      <a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
-      <span class="at">＠</span>
-      <a href="#/team/${esc(g.h)}">${esc(g.h)}</a>
+      ${match}
       ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}
     </div>
     <div class="meta">
