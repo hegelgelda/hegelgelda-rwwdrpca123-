@@ -502,7 +502,9 @@ svg.odds .ln { fill: none; stroke-width: 1.8; vector-effect: non-scaling-stroke;
 svg.odds .ln.k { stroke: var(--accent); }
 svg.odds .ln.b { stroke: var(--warn); stroke-dasharray: 5 4; }
 svg.odds .pt.b { fill: var(--warn); }
-svg.odds .ax { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
+/* ★ viewBox は 640 幅で描いて段の幅へ縮むので、文字は大きめに置く
+   （11px のままだと実寸 7px 程度になって読めない） */
+svg.odds .ax { fill: var(--muted); font-size: 14px; font-family: var(--mono); }
 .legend .lg { margin-right: 14px; font-weight: 600; }
 .legend .lg::before {
   content: ''; display: inline-block; width: 14px; height: 2px;
@@ -562,3 +564,38 @@ tr.fav2 td a.tm.is-fav { color: var(--fav2); }
 .gamehead.fav2 { border-color: var(--fav2); background: var(--fav2-soft); }
 .gamehead .tri.is-fav { color: var(--fav); }
 .gamehead.fav2 .tri { color: var(--fav2); }
+
+/* ------------------------------------------- オッズ と injury を横に並べる
+   ★ 右（injury）の中身を absolute にしないと、選手が多い試合で行の高さが
+     injury 側に決まってしまい「同じ縦幅」にならない。
+     absolute なら行の高さは左（オッズ）が決め、右はその中で縦スクロールする */
+.sidebyside {
+  display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr);
+  gap: 20px; margin-top: 20px;
+}
+.sidebyside .pane { min-width: 0; display: flex; flex-direction: column; }
+.sidebyside .pane h2 { margin-top: 0; }
+.sidebyside .inj .injbox { position: relative; flex: 1 1 auto; min-height: 280px; }
+.sidebyside .inj .injscroll {
+  position: absolute; inset: 0; overflow-y: auto; padding-right: 6px;
+}
+.sidebyside .inj h3 { margin: 0 0 2px; }
+.sidebyside .inj .sub { margin: 0 0 8px; }
+.sidebyside .inj h3 ~ h3 { margin-top: 18px; }
+
+/* 狭い画面では縦に積む。absolute を解いて全部見せる */
+@media (max-width: 900px) {
+  .sidebyside { grid-template-columns: 1fr; gap: 10px; }
+  .sidebyside .inj .injbox { min-height: 0; }
+  .sidebyside .inj .injscroll { position: static; overflow: visible; padding: 0; }
+}
+
+/* 理由は名前の下、版の時刻は status の下に小さく畳む */
+table.injtab td { vertical-align: top; }
+table.injtab .rsn {
+  display: block; font-size: 11px; color: var(--muted); line-height: 1.35;
+}
+table.injtab .hb {
+  display: block; font-size: 11px; color: var(--muted);
+  font-family: var(--mono); margin-top: 2px; white-space: nowrap;
+}

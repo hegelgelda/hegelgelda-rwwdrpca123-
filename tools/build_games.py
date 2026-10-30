@@ -57,7 +57,7 @@ import json
 import os
 import subprocess
 import sys
-from datetime import timezone
+from datetime import datetime, timezone
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
@@ -414,17 +414,45 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj, odds):
     # ---- 試合前オッズの推移（VPS）
     od = odds.get(gid) or {}
 
-    # ---- injury report（VPS）
-    injury = {}
-    for p in (inj.get(gid, {}) or {}).get("players", []):
-        injury.setdefault(p["tri"], []).append(
-            {k: p[k] for k in ("name", "first", "final", "reason") if p.get(k)})
-
-    tip_et = tip_jst = None
+    tip_utc = tip_et = tip_jst = None
     if tip is not None:
-        t = tip.replace(tzinfo=timezone.utc) if tip.tzinfo is None else tip
-        tip_et = t.astimezone(ET).strftime("%H:%M")
-        tip_jst = t.astimezone(JST).strftime("%m/%d %H:%M")
+        tip_utc = tip.replace(tzinfo=timezone.utc) if tip.tzinfo is None else tip
+        tip_et = tip_utc.astimezone(ET).strftime("%H:%M")
+        tip_jst = tip_utc.astimezone(JST).strftime("%m/%d %H:%M")
+
+    # ---- injury report（VPS）
+    # ★ 版の時刻そのものより「試合の何時間前か」が知りたい量なので、
+    #   ここで差に直して `fh`（初出）/ `lh`（最終）として持たせる。
+    #   ティップが分からない試合（日程が取れていない）は欄を作らない。
+    ig = inj.get(gid, {}) or {}
+
+    # ★ 基準のティップは **VPS 側（live DB）のものを優先する**。
+    #   版を切るのも VPS 側なので、こちらの `game_schedule` で引き算すると
+    #   two つの時計がずれる。実測で 1 試合（0022600144）が 1 時間ずれており、
+    #   「初出が試合の 0.5 時間後」といった負の値になっていた。
+    #   `game_schedule` は 2026-10-19 取得のままで、VPS は毎日取り直している。
+    inj_tip = tip_utc
+    if ig.get("tip_utc"):
+        inj_tip = datetime.fromisoformat(ig["tip_utc"])
+        if inj_tip.tzinfo is None:
+            inj_tip = inj_tip.replace(tzinfo=timezone.utc)
+
+    def hours_before(iso_s):
+        if not iso_s or inj_tip is None:
+            return None
+        t = datetime.fromisoformat(iso_s)
+        if t.tzinfo is None:
+            t = t.replace(tzinfo=timezone.utc)
+        return round((inj_tip - t).total_seconds() / 3600.0, 1)
+
+    injury = {}
+    for p in ig.get("players", []):
+        rec = {k: p[k] for k in ("name", "first", "final", "reason") if p.get(k)}
+        for key, src in (("fh", "first_slot"), ("lh", "last_slot")):
+            h = hours_before(p.get(src))
+            if h is not None:
+                rec[key] = h
+        injury.setdefault(p["tri"], []).append(rec)
 
     return {
         "game_id": gid,

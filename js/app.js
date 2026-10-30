@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '3253535c';
+const DATA_V = '5b943194';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -1150,6 +1150,12 @@ function qboxTable(g, tri, key) {
     <tbody>${rows}</tbody></table></div>`;
 }
 
+/* 版の時刻を「試合の何時間前か」に直す。1 時間未満は分で出す */
+const beforeTip = (h) => (h === null || h === undefined) ? ''
+  : h < 0 ? `${(-h).toFixed(1)}時間後`
+    : h < 0.05 ? 'ティップ直前'
+      : h < 1 ? `${Math.round(h * 60)}分前` : `${h.toFixed(1)}時間前`;
+
 /* injury report。
    ★ 初出と最終の両方を出す。NBA はティップまでに必ず Questionable を
      Out / Available へ解決するので、最終だけだと Questionable が常にゼロになる。
@@ -1163,20 +1169,27 @@ function injuryTable(g, tri) {
     return `<p class="empty">${esc(tri)}: injury report の記録が無い。</p>`;
   }
   const rows = list.map((p) => `<tr>
-    <td>${esc(p.name)}</td>
-    <td>${stTag(p.first)}</td>
+    <td>${esc(p.name)}${p.reason
+      ? `<span class="rsn">${esc(p.reason)}</span>` : ''}</td>
+    <td>${stTag(p.first)}<span class="hb">${beforeTip(p.fh)}</span></td>
     <td>${(p.final && p.final !== p.first) ? stTag(p.final)
-      : '<span class="dim">変化なし</span>'}</td>
-    <td class="dim">${esc(p.reason || '')}</td>
+      : '<span class="dim">変化なし</span>'}<span class="hb">${
+      beforeTip(p.lh)}</span></td>
   </tr>`).join('');
   const n = {};
   for (const p of list) n[p.first] = (n[p.first] || 0) + 1;
   const summary = STATUS_ORDER.filter((k) => n[k]).map((k) => `${k} ${n[k]}`).join(' / ');
+  /* 記載がいつ始まっていつ最後に動いたか。最も早い初出と最も遅い最終を取る */
+  const fh = list.map((p) => p.fh).filter((v) => v || v === 0);
+  const lh = list.map((p) => p.lh).filter((v) => v || v === 0);
+  const span = fh.length
+    ? `<br>記載は ${beforeTip(Math.max(...fh))} 〜 ${beforeTip(Math.min(...lh))}`
+    : '';
   return `<h3>${esc(tri)}</h3>
     <p class="sub">初出の時点で ${esc(summary || '記載なし')}${
-      out.length ? `・実際の欠場 ${out.length} 名` : ''}</p>
+      out.length ? `・実際の欠場 ${out.length} 名` : ''}${span}</p>
     ${list.length ? `<div class="wrap"><table class="injtab">
-      <thead><tr><th>選手</th><th>初出</th><th>最終</th><th>理由</th></tr></thead>
+      <thead><tr><th>選手</th><th>初出</th><th>最終</th></tr></thead>
       <tbody>${rows}</tbody></table></div>` : ''}
     ${out.length ? `<p class="sub">実際の欠場: ${out.map(esc).join(' / ')}</p>` : ''}`;
 }
@@ -1202,7 +1215,8 @@ const hhmm = (min) => {
 function lineChart(series, ref, unit) {
   const live = series.filter((s) => s.pts && s.pts.length);
   if (!live.length) return '<p class="empty">この系列のデータが無い。</p>';
-  const W = 1000, H = 230, L = 52, R = 12, T = 12, B = 26;
+  /* ★ injury と横に並べるので段が狭い。横長のままだと高さが潰れる */
+  const W = 640, H = 300, L = 48, R = 10, T = 12, B = 30;
   const xs = live.flatMap((s) => s.pts.map((p) => p[0]));
   const ys = live.flatMap((s) => s.pts.map((p) => p[1]));
   let x0 = Math.min(...xs), x1 = Math.max(...xs, 0);
@@ -1217,8 +1231,9 @@ function lineChart(series, ref, unit) {
   const X = (v) => L + ((v - x0) / (x1 - x0)) * (W - L - R);
   const Y = (v) => T + (1 - (v - y0) / (y1 - y0)) * (H - T - B);
 
-  /* 目盛り。横は 12 時間ごと、縦は 4 本 */
-  const step = (x1 - x0) > 1500 ? 720 : (x1 - x0) > 600 ? 360 : 120;
+  /* 目盛り。縦は 4 本。横は幅が狭いので範囲に応じて粗くする */
+  const span = x1 - x0;
+  const step = span > 2880 ? 1440 : span > 1200 ? 720 : span > 480 ? 240 : 120;
   const xt = [];
   for (let v = 0; v >= x0; v -= step) xt.push(v);
   const yt = [0, 1, 2, 3, 4].map((k) => y0 + (y1 - y0) * k / 4);
@@ -1331,19 +1346,26 @@ async function renderGame(gid) {
          交代記録から推定するため、合わない試合は出すと誤りになる。
          公式のローテーション記録でも埋まらなかった。</p>`}
 
-    <h2>試合前のオッズ</h2>
-    ${Object.keys(g.odds || {}).length ? `
-      <div class="qtabs" id="otabs">
-        ${Object.keys(ODDS_META).filter((k) => (g.odds || {})[k])
-          .map((k, n) => `<button class="${n ? '' : 'on'}" data-o="${k}">${
-            ODDS_META[k].label}</button>`).join('')}
-      </div>
-      <div id="oddswrap"></div>`
-      : `<p class="empty">この試合のオッズは無い。収集を始めたのが
-         2026-10-23 なので、それより前の試合には記録がない。</p>`}
-
-    <h2>injury report</h2>
-    ${[g.away, g.home].map((t) => injuryTable(g, t)).join('')}
+    <div class="sidebyside">
+      <section class="pane">
+        <h2>試合前のオッズ</h2>
+        ${Object.keys(g.odds || {}).length ? `
+          <div class="qtabs" id="otabs">
+            ${Object.keys(ODDS_META).filter((k) => (g.odds || {})[k])
+              .map((k, n) => `<button class="${n ? '' : 'on'}" data-o="${k}">${
+                ODDS_META[k].label}</button>`).join('')}
+          </div>
+          <div id="oddswrap"></div>`
+          : `<p class="empty">この試合のオッズは無い。収集を始めたのが
+             2026-10-23 なので、それより前の試合には記録がない。</p>`}
+      </section>
+      <section class="pane inj">
+        <h2>injury report</h2>
+        <div class="injbox"><div class="injscroll">
+          ${[g.away, g.home].map((t) => injuryTable(g, t)).join('')}
+        </div></div>
+      </section>
+    </div>
 
     <h2>ボックススコア</h2>
     <div class="qtabs" id="qtabs">
