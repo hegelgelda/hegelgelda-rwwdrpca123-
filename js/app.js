@@ -317,6 +317,7 @@ async function renderTeams() {
 async function renderTeam(tri, tab) {
   const [teams, rost, sc] = await Promise.all(
     [load('teams'), load('rosters'), load('schedule')]);
+  await results();   /* 日程表の「結果」列から試合ページへ飛ばすため */
   const team = teams.find((t) => t.tri === tri);
   if (!team) { view.innerHTML = `<p class="err">チーム ${esc(tri)} が無い。</p>`; return; }
 
@@ -408,11 +409,27 @@ function teamSchedule(gs, tri) {
   const t = todayISO();
   return `<div class="wrap"><table>
     <thead><tr><th>日付</th><th class="n">ET</th><th class="n">日本時間</th>
-      <th>対戦</th><th>H/A</th><th>会場</th><th>TV</th></tr></thead>
+      <th>対戦</th><th>結果</th><th>H/A</th><th>会場</th><th>TV</th></tr></thead>
     <tbody>
     ${gs.map((g) => {
       const home = g.h === tri;
       const opp = home ? g.a : g.h;
+      /* 終わった試合は「結果」が試合ページへの入口。`p: 0` の試合は
+         個別ページを作っていないのでリンクにしない（日程の一覧と同じ） */
+      const r = (RESULTS || {})[g.game_id];
+      const done = r && r.ap !== null && r.ap !== undefined
+                     && r.hp !== null && r.hp !== undefined;
+      const mine = done ? (home ? r.hp : r.ap) : null;
+      const they = done ? (home ? r.ap : r.hp) : null;
+      const score = done
+        ? `<span class="wl ${mine > they ? 'w' : 'l'}">${mine > they ? '○' : '●'}</span>`
+          + `${mine}-${they}${r.np > 4 ? ` <span class="ot">OT</span>` : ''}`
+        : '';
+      const res = !done ? '<span class="dim">—</span>'
+        : r.p === 0
+          ? `<span class="res nolink" title="この試合は個別ページを作っていない"
+               >${score}</span>`
+          : `<a class="res" href="#/game/${esc(g.game_id)}">${score}</a>`;
       /* 注目チーム同士の試合は行ごと色を変える */
       const cls = [g.d < t ? 'dim' : '', favCls(tri, opp).trim()]
         .filter(Boolean).join(' ');
@@ -423,6 +440,7 @@ function teamSchedule(gs, tri) {
         <td><a class="tm${FAV.has(opp) ? ' is-fav' : ''}"
                href="#/team/${esc(opp)}">${esc(opp)}</a>
             ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}</td>
+        <td>${res}</td>
         <td class="dim">${home ? 'ホーム' : 'アウェイ'}</td>
         <td class="dim" style="font-size:12px">${esc(g.city || '')}</td>
         <td class="dim">${esc(g.tv || '')}</td>

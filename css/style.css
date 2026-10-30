@@ -652,3 +652,12 @@ a.vizbtn:hover { background: var(--accent); color: #04060c; text-decoration: non
   .sidebyside .note .noteinner { position: static; }
   .notelist { overflow: visible; }
 }
+
+/* チームページの日程表の「結果」列。押すと試合ページへ飛ぶ */
+td a.res, td .res.nolink { font-family: var(--mono); font-weight: 600;
+                           white-space: nowrap; }
+td .res.nolink { color: var(--muted); }
+.wl { margin-right: 5px; font-family: system-ui, sans-serif; }
+.wl.w { color: var(--accent); }
+.wl.l { color: var(--warn); }
+td .ot { font-size: 11px; color: var(--muted); margin-left: 3px; }
