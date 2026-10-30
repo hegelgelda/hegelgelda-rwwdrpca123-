@@ -460,3 +460,16 @@ table.injtab { font-size: 13px; }
   .gamehead .side { gap: 8px; }
   .gantt .row { grid-template-columns: 96px 1fr 42px; }
 }
+
+/* クォーターの切り替え（ボックススコア） */
+.qtabs { display: flex; gap: 6px; flex-wrap: wrap; margin: 10px 0 4px; }
+.qtabs button {
+  background: var(--panel); color: var(--muted);
+  border: 1px solid var(--line); border-radius: 999px;
+  padding: 4px 14px; font-size: 13px; font-weight: 600; cursor: pointer;
+}
+.qtabs button:hover { color: var(--ink); background: var(--hover); }
+.qtabs button.on {
+  background: var(--accent-soft); color: var(--accent);
+  border-color: var(--accent);
+}

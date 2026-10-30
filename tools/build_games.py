@@ -16,7 +16,8 @@
 | 延長の得点 | `team_quarter`（PBP 集計） | **延長はここにしか無い** |
 | 最終得点 | `player_game_base` の合計 | `game_line_score.pts` は全行 null |
 | ボックススコア | `player_game_base` + `player_game_adv` | |
-| ラインナップ推移 | `player_stint`（PBP から再構成） | `stint_game_qc.合格` を添える |
+| ラインナップ推移 | `player_stint`（PBP）/ 落ちた試合は `player_rotation`（公式） | 出どころを `stint_src` に残す |
+| クォーター別の成績 | `player_quarter_fixed` + 出場区間 + PBP のアシスト | 画面で Q1〜Q4 に切り替える |
 | 得点推移 | `pbp` の得点が動いた行 | |
 | injury report | VPS の `injury_games.json` | **初出**と最終の両方 |
 | 実際の欠場 | `game_inactive` | 試合後に確定したもの |
@@ -29,9 +30,22 @@
   Questionable を解決するので、最終だけ見ると Questionable が常にゼロになる。
   不確定さは初出にしか残らない（`export_injury_games.py` の注記と同じ）。
 
-★ **ラインナップ推移は検算に落ちた試合では出さない。** `stint_game_qc.合格` が偽の
-  試合（今季 12 / 71）は、ピリオド開始5人の推定が外れている可能性がある。
-  黙って出すと「ベンチにいた選手がコートにいる」表示になる。
+★ **ラインナップ推移は検算に通った出どころでしか出さない。**
+  PBP（`stint_game_qc.合格`、今季 59/71）→ 落ちた試合は公式の
+  `player_rotation`（`rotation_game_qc.ok`、11/12 を回収）→ 合わせて 70/71。
+  どちらも落ちた試合は出さない。黙って出すと
+  「ベンチにいた選手がコートにいる」表示になる。
+
+★ **`player_quarter` ではなく `player_quarter_fixed` を使う。**
+  前者は `fetch_pbp.py --aggregate`（壊れている方）に上書きされると
+  **pts が全季ゼロ**になり、team_id も直っていない。
+  後者が `rebuild_quarter.py` の出力で、`team_quarter` と同じ中身。
+
+★ **アシストはどのクォーター表にも無い。** `player_quarter_fixed` に ast 列が無く、
+  PBP の description 末尾の `(Payton 1 AST)` から取るしかない。
+  2026-27 で抽出件数 3,719 = 公式の ast 合計 3,719 と**完全一致**。
+  名前の解決は、アクセントを落とし、`K. Williams` 形式（同姓が同じチームに
+  いるとき NBA が使う）を頭文字＋姓で引き当てると 2,367 / 2,382 が一意になる。
 """
 
 from __future__ import annotations
@@ -137,6 +151,48 @@ def meta_rows(con, season: str):
     """, [season]).fetchall()
 
 
+QBOX_SQL = """
+select d.tri, q.period, q.person_id, q.pts, q.fga, q.fgm, q.fg3a, q.fg3m,
+       q.fta, q.ftm, q.oreb, q.dreb, q.reb, q.tov, q.pf, q.stl, q.blk
+from p.player_quarter_fixed q
+join team_dim d on d.team_id = q.team_id
+where q.game_id = ?
+order by q.period, d.tri
+"""
+
+# アシストは description から取る。アクセントを落とし、`K. Williams` 形式は
+# 頭文字＋姓で引き当てる（同姓が同じチームにいるときに NBA が使う書き方）
+AST_SQL = r"""
+with a as (
+  select period, team_id,
+         nullif(trim(regexp_extract(description, '\(([^()]+?) [0-9]+ AST\)', 1)), '') as nm
+  from p.pbp
+  where game_id = ? and action_type = 'Made Shot' and description like '%AST)%'),
+b as (
+  select period, team_id, nm, lower(strip_accents(nm)) as k,
+         case when nm like '%. %' then lower(regexp_extract(nm, '^([A-Za-z]+)\.', 1)) end as ini,
+         case when nm like '%. %'
+              then lower(strip_accents(regexp_extract(nm, '\. (.+)$', 1))) end as sur
+  from a),
+r as (
+  select team_id, player_id, lower(strip_accents(player_name)) as pn
+  from player_game_base where game_id = ?),
+j as (
+  select b.period, b.nm,
+         count(distinct r.player_id) as cand, any_value(r.player_id) as pid
+  from b left join r
+    on r.team_id = b.team_id
+   and (case when b.ini is null then r.pn like '%' || b.k || '%'
+             else r.pn like b.ini || '%' and r.pn like '%' || b.sur end)
+  group by 1, 2),
+n as (
+  select b.period, b.nm, count(*) as n from b group by 1, 2)
+select j.period, j.pid, sum(n.n) as ast
+from j join n on n.period = j.period and n.nm = j.nm
+where j.cand = 1
+group by 1, 2
+"""
+
 BOX_SQL = """
 select b.team_abbreviation as tri, b.player_id as pid, b.player_name as name,
        b.min_sec, b.pts, b.reb, b.oreb, b.dreb, b.ast, b.stl, b.blk, b.tov, b.pf,
@@ -147,6 +203,59 @@ left join player_game_adv v using (game_id, player_id)
 where b.game_id = ?
 order by b.team_abbreviation, b.min desc nulls last
 """
+
+
+def clip(iv, lo, hi):
+    """区間の集まりを [lo, hi) で切って秒数を返す。"""
+    t = 0.0
+    for a, b in iv:
+        t += max(0.0, min(b, hi) - max(a, lo))
+    return t
+
+
+def quarter_box(con, gid, mx, box, stints):
+    """クォーター別の成績。{tri: {"Q1": [ {...}, ... ]}}
+
+    ★ 出場時間は box の合計ではなく**出場区間から**切り出す。区間が無い試合
+      （検算に落ちた試合）では分を出さない。数字を出すなら根拠のあるものだけ。
+    """
+    per = {}
+    for r in con.execute(QBOX_SQL, [gid]).fetchall():
+        tri, period = r[0], int(r[1])
+        per.setdefault((tri, period), {})[int(r[2])] = {
+            "pts": i(r[3]), "fga": i(r[4]), "fgm": i(r[5]), "fg3a": i(r[6]),
+            "fg3m": i(r[7]), "fta": i(r[8]), "ftm": i(r[9]), "oreb": i(r[10]),
+            "dreb": i(r[11]), "reb": i(r[12]), "tov": i(r[13]), "pf": i(r[14]),
+            "stl": i(r[15]), "blk": i(r[16]),
+        }
+    ast = {}
+    for period, pid, n in con.execute(AST_SQL, [gid, gid]).fetchall():
+        if pid is not None:
+            ast[(int(period), int(pid))] = int(n)
+
+    iv_of = {}
+    for tri, lst in stints.items():
+        for p in lst:
+            iv_of[(tri, p["pid"])] = p["iv"]
+    name_of = {p["pid"]: p["name"] for team in box.values() for p in team}
+
+    out = {}
+    for (tri, period), players in sorted(per.items()):
+        lo = (period - 1) * 720 if period <= 4 else 2880 + (period - 5) * 300
+        hi = lo + (720 if period <= 4 else 300)
+        rows = []
+        for pid, st in players.items():
+            sec = clip(iv_of.get((tri, pid), []), lo, hi) if iv_of else None
+            row = {"pid": pid, "name": name_of.get(pid, str(pid)),
+                   "sec": i(sec) if sec is not None else None,
+                   "ast": ast.get((period, pid), 0)}
+            row.update(st)
+            rows.append(row)
+        # 出場時間があればその順、無ければ得点順
+        rows.sort(key=lambda r: (-(r["sec"] or 0), -(r["pts"] or 0)))
+        key = "Q%d" % period if period <= 4 else "OT%d" % (period - 4)
+        out.setdefault(tri, {})[key] = rows
+    return out
 
 
 def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
@@ -211,19 +320,36 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
             "ortg": i(r[22]), "drtg": i(r[23]),
         })
 
-    # ---- ラインナップ推移（検算に合格した試合だけ）
-    ok = con.execute("select 合格 from stint_game_qc where game_id = ?",
-                     [gid]).fetchone()
-    stint_ok = bool(ok[0]) if ok else False
+    # ---- ラインナップ推移
+    # ★ PBP を主、公式の rotation を控えにする。どちらも検算を通った場合だけ出す。
+    #   PBP は各ピリオドの開始5人を推定しているので落ちることがあり（今季 12/71）、
+    #   rotation はそこを公式記録で埋める（11/12 を回収）。
+    pbp_ok = con.execute("select 合格 from stint_game_qc where game_id = ?",
+                         [gid]).fetchone()
+    pbp_ok = bool(pbp_ok[0]) if pbp_ok else False
+    rot_ok = con.execute("select ok from rotation_game_qc where game_id = ?",
+                         [gid]).fetchone()
+    rot_ok = bool(rot_ok[0]) if rot_ok else False
+    stint_src = "pbp" if pbp_ok else ("rotation" if rot_ok else None)
+    stint_ok = stint_src is not None
+
     stints = {}
     if stint_ok:
         name_of = {p["pid"]: p["name"] for team in box.values() for p in team}
         raw = {}
-        for tri, pid, t_in, t_out in con.execute("""
-            select d.tri, s.person_id, s.t_in, s.t_out
-            from player_stint s join team_dim d on d.team_id = s.team_id
-            where s.game_id = ? order by d.tri, s.person_id, s.t_in""",
-                [gid]).fetchall():
+        if stint_src == "pbp":
+            rows = con.execute("""
+                select d.tri, s.person_id, s.t_in, s.t_out
+                from player_stint s join team_dim d on d.team_id = s.team_id
+                where s.game_id = ? order by d.tri, s.person_id, s.t_in""",
+                               [gid]).fetchall()
+        else:
+            rows = con.execute("""
+                select d.tri, r.person_id, r.t_in, r.t_out
+                from player_rotation r join team_dim d on d.team_id = r.team_id
+                where r.game_id = ? order by d.tri, r.person_id, r.t_in""",
+                               [gid]).fetchall()
+        for tri, pid, t_in, t_out in rows:
             raw.setdefault((tri, int(pid)), []).append([i(t_in), i(t_out)])
         for (tri, pid), iv in raw.items():
             # ピリオド境界で割れている区間はつなぐ（出番は切れていない）
@@ -237,6 +363,9 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
                 {"pid": pid, "name": name_of.get(pid, str(pid)), "iv": merged})
         for tri in stints:
             stints[tri].sort(key=lambda x: -sum(b - a for a, b in x["iv"]))
+
+    # ---- クォーター別の成績
+    qbox = quarter_box(con, gid, mx, box, stints)
 
     # ---- 得点推移
     path = []
@@ -286,8 +415,8 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj):
         "arena": arena, "city": city,
         "score": {"away": box_pts.get(away), "home": box_pts.get(home)},
         "periods": periods, "quarters": quarters, "quarter_src": qsrc,
-        "check": check, "stint_ok": stint_ok,
-        "box": box, "stints": stints, "score_path": path,
+        "check": check, "stint_ok": stint_ok, "stint_src": stint_src,
+        "box": box, "qbox": qbox, "stints": stints, "score_path": path,
         "inactive": inactive, "injury": injury,
     }
 

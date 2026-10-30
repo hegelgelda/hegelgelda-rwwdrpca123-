@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '226ae39a';
+const DATA_V = '8798c2c0';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -1059,7 +1059,11 @@ function gantt(g, tri) {
   </div>`;
 }
 
-function boxTable(g, tri) {
+/* ボックススコア。`key` が 'all' なら試合全体、'Q1' などならそのクォーター。
+   ★ クォーター別には +/- と USG% を出さない。`player_quarter_fixed` に無く、
+     出せない数字を 0 で埋めると「0 だった」と読めてしまう */
+function boxTable(g, tri, key) {
+  if (key && key !== 'all') return qboxTable(g, tri, key);
   const list = g.box[tri] || [];
   if (!list.length) return '<p class="empty">ボックススコアが無い。</p>';
   const rows = list.map((p) => `<tr>
@@ -1086,6 +1090,34 @@ function boxTable(g, tri) {
       <th class="n">3P</th><th class="n">FT</th><th class="n">Stl</th>
       <th class="n">Blk</th><th class="n">TO</th><th class="n">PF</th>
       <th class="n">+/-</th><th class="n">USG%</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+function qboxTable(g, tri, key) {
+  const list = ((g.qbox || {})[tri] || {})[key] || [];
+  if (!list.length) {
+    return `<p class="empty">${esc(key)} の記録が無い。</p>`;
+  }
+  const rows = list.map((p) => `<tr>
+    <td><a href="#/p/${p.pid}">${esc(p.name)}</a></td>
+    <td class="n">${p.sec === null || p.sec === undefined
+      ? '<span class="dim">—</span>' : mmss(p.sec)}</td>
+    <td class="n b">${p.pts ?? 0}</td>
+    <td class="n">${p.reb ?? 0}</td>
+    <td class="n">${p.ast ?? 0}</td>
+    <td class="n">${p.fgm ?? 0}-${p.fga ?? 0}</td>
+    <td class="n">${p.fg3m ?? 0}-${p.fg3a ?? 0}</td>
+    <td class="n">${p.ftm ?? 0}-${p.fta ?? 0}</td>
+    <td class="n">${p.stl ?? 0}</td>
+    <td class="n">${p.blk ?? 0}</td>
+    <td class="n">${p.tov ?? 0}</td>
+    <td class="n">${p.pf ?? 0}</td>
+  </tr>`).join('');
+  return `<div class="wrap"><table class="boxtab">
+    <thead><tr><th>選手</th><th class="n">分</th><th class="n">得点</th>
+      <th class="n">Reb</th><th class="n">Ast</th><th class="n">FG</th>
+      <th class="n">3P</th><th class="n">FT</th><th class="n">Stl</th>
+      <th class="n">Blk</th><th class="n">TO</th><th class="n">PF</th></tr></thead>
     <tbody>${rows}</tbody></table></div>`;
 }
 
@@ -1170,18 +1202,42 @@ async function renderGame(gid) {
     ${scorePath(g)}
 
     <h2>ラインナップ推移</h2>
+    ${g.stint_ok ? `<p class="sub">${g.stint_src === 'rotation'
+      ? '公式のローテーション記録（GameRotation）から。'
+      : 'PBP の交代記録から再構成。各ピリオドの開始5人は推定で、検算に通っている。'}</p>`
+      : ''}
     ${g.stint_ok
       ? [g.away, g.home].map((t) => `<h3>${esc(t)}</h3>${gantt(g, t)}`).join('')
       : `<p class="empty">この試合は出場区間の検算に通らなかったので出さない。
-         PBP には各ピリオドの<strong>開始5人</strong>が記録されておらず、
-         交代記録から推定しているため、合わない試合は出すと誤りになる。</p>`}
+         PBP には各ピリオドの<strong>開始5人</strong>が記録されておらず
+         交代記録から推定するため、合わない試合は出すと誤りになる。
+         公式のローテーション記録でも埋まらなかった。</p>`}
 
     <h2>injury report</h2>
     ${[g.away, g.home].map((t) => injuryTable(g, t)).join('')}
 
     <h2>ボックススコア</h2>
-    ${[g.away, g.home].map((t) => `<h3>${esc(t)}</h3>${boxTable(g, t)}`).join('')}
+    <div class="qtabs" id="qtabs">
+      <button class="on" data-q="all">全体</button>
+      ${g.periods.map((q) => `<button data-q="${esc(q)}">${esc(q)}</button>`).join('')}
+    </div>
+    <div id="boxwrap"></div>
   `;
+
+  /* クォーターの切り替え。既定は「全体」で、押した枠だけ描き直す */
+  const wrap = document.getElementById('boxwrap');
+  const draw = (key) => {
+    wrap.innerHTML = [g.away, g.home]
+      .map((t) => `<h3>${esc(t)}</h3>${boxTable(g, t, key)}`).join('');
+  };
+  draw('all');
+  document.getElementById('qtabs').onclick = (e) => {
+    const b = e.target.closest('button[data-q]');
+    if (!b) return;
+    document.querySelectorAll('#qtabs button').forEach(
+      (x) => { x.className = x === b ? 'on' : ''; });
+    draw(b.dataset.q);
+  };
 }
 
 async function route() {
