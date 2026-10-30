@@ -44,6 +44,18 @@ async function results() {
 
 /* ------------------------------------------------------------- 小道具 */
 
+/* ★ 注目チーム。日程・チーム一覧・試合ページで色を変える。
+   片方だけなら `fav`（琥珀）、注目チーム同士なら `fav2`（紫）。
+   増やす / 減らすのはここだけ。CSS 側は --fav / --fav2 */
+const FAV = new Set(['DET', 'NYK', 'OKC', 'SAS', 'DEN']);
+const favCls = (a, h) => {
+  const n = (FAV.has(a) ? 1 : 0) + (FAV.has(h) ? 1 : 0);
+  return n === 2 ? ' fav2' : n ? ' fav' : '';
+};
+/* 色の意味を 1 行添える。凡例が無いと何色なのか分からない */
+const favLegend = () => `<span class="favkey">注目 ${[...FAV].join(' ')}</span>`
+  + `<span class="favkey k2">注目同士</span>`;
+
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
@@ -131,6 +143,7 @@ async function renderSchedule(dateArg) {
     <p class="sub">
       ${esc(sc.season)} レギュラーシーズン ${games.length.toLocaleString()} 試合
       ${until > 0 ? `・<strong>開幕まであと ${until} 日</strong>` : ''}
+      ${favLegend()}
     </p>
 
     <div class="datebar">
@@ -190,6 +203,7 @@ async function renderWeek(dateArg) {
     <p class="sub">
       ${esc(sc.season)} レギュラーシーズン
       ${start === thisWeek ? '・<strong>今週</strong>' : ''}
+      ${favLegend()}
     </p>
 
     <div class="datebar">
@@ -233,11 +247,15 @@ function gameRow(g) {
      絡む試合はページを作っていない（tools/build_games.py の EXCLUDE_TRI）。
      スコアは索引にあるので出すが、リンクにはしない */
   const page = done && r.p !== 0;
-  const score = `<span class="tri${r.ap > r.hp ? ' win' : ''}">${esc(g.a)}</span>
-     <span class="pts${r.ap > r.hp ? ' win' : ''}">${r.ap}</span>
+  /* 注目チームの側だけ色を変える。注目同士なら枠ごと別色になる（CSS） */
+  const fa = FAV.has(g.a) ? ' is-fav' : '', fh = FAV.has(g.h) ? ' is-fav' : '';
+  /* ★ `done` でないと `r` が無い。テンプレート文字列は即時に評価されるので、
+     ここを三項の外に出すと未実施の試合で `r.ap` を読んで全体が落ちる */
+  const score = !done ? '' : `<span class="tri${r.ap > r.hp ? ' win' : ''}${fa}">${esc(g.a)}</span>
+     <span class="pts${r.ap > r.hp ? ' win' : ''}${fa}">${r.ap}</span>
      <span class="at">－</span>
-     <span class="pts${r.hp > r.ap ? ' win' : ''}">${r.hp}</span>
-     <span class="tri${r.hp > r.ap ? ' win' : ''}">${esc(g.h)}</span>`;
+     <span class="pts${r.hp > r.ap ? ' win' : ''}${fh}">${r.hp}</span>
+     <span class="tri${r.hp > r.ap ? ' win' : ''}${fh}">${esc(g.h)}</span>`;
   /* 終わった試合は対戦の部分がそのまま試合ページへの入口。
      まだの試合は従来どおりチームページへ */
   const match = page
@@ -245,10 +263,10 @@ function gameRow(g) {
     : done
       ? `<span class="result nolink" title="この試合は個別ページを作っていない"
            >${score}</span>${ot}`
-      : `<a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
+      : `<a class="tm${fa}" href="#/team/${esc(g.a)}">${esc(g.a)}</a>
          <span class="at">＠</span>
-         <a href="#/team/${esc(g.h)}">${esc(g.h)}</a>`;
-  return `<div class="game${done ? ' is-done' : ''}">
+         <a class="tm${fh}" href="#/team/${esc(g.h)}">${esc(g.h)}</a>`;
+  return `<div class="game${done ? ' is-done' : ''}${favCls(g.a, g.h)}">
     <div class="tip">
       <span class="et">${esc(g.t || '')}</span>
       <span class="jst">${esc(jst(g))}</span>
@@ -284,7 +302,8 @@ async function renderTeams() {
             <h2 style="margin-top:14px">${esc(div)}</h2>
             <div class="divgrid">
               ${ts.map((t) => `
-                <a class="teamrow" href="#/team/${esc(t.tri)}">
+                <a class="teamrow${FAV.has(t.tri) ? ' is-fav' : ''}"
+                   href="#/team/${esc(t.tri)}">
                   <span>${esc(t.full_name)}</span>
                   <span class="tri">${esc(t.tri)}</span>
                 </a>`).join('')}
@@ -308,7 +327,7 @@ async function renderTeam(tri, tab) {
   view.innerHTML = `
     <div class="teamhead">
       <h1>${esc(team.full_name)}</h1>
-      <span class="tri">${esc(tri)}</span>
+      <span class="tri${FAV.has(tri) ? ' is-fav' : ''}">${esc(tri)}</span>
       <span class="sub" style="margin:0">${esc(team.conference)} / ${esc(team.division)}</span>
     </div>
     <div class="tabs">
@@ -394,11 +413,15 @@ function teamSchedule(gs, tri) {
     ${gs.map((g) => {
       const home = g.h === tri;
       const opp = home ? g.a : g.h;
-      return `<tr${g.d < t ? ' class="dim"' : ''}>
+      /* 注目チーム同士の試合は行ごと色を変える */
+      const cls = [g.d < t ? 'dim' : '', favCls(tri, opp).trim()]
+        .filter(Boolean).join(' ');
+      return `<tr${cls ? ` class="${cls}"` : ''}>
         <td>${fmtDate(g.d)}</td>
         <td class="n dim">${esc(g.t || '')}</td>
         <td class="n">${esc(jst(g))}</td>
-        <td><a href="#/team/${esc(opp)}">${esc(opp)}</a>
+        <td><a class="tm${FAV.has(opp) ? ' is-fav' : ''}"
+               href="#/team/${esc(opp)}">${esc(opp)}</a>
             ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}</td>
         <td class="dim">${home ? 'ホーム' : 'アウェイ'}</td>
         <td class="dim" style="font-size:12px">${esc(g.city || '')}</td>
@@ -1270,15 +1293,17 @@ async function renderGame(gid) {
   view.innerHTML = `
     <p class="sub"><a href="#/d/${esc(g.date)}">&larr; ${fmtDate(g.date)}の日程</a></p>
 
-    <div class="gamehead">
+    <div class="gamehead${favCls(g.away, g.home)}">
       <div class="side">
-        <a href="#/team/${esc(g.away)}" class="tri">${esc(g.away)}</a>
+        <a href="#/team/${esc(g.away)}"
+           class="tri${FAV.has(g.away) ? ' is-fav' : ''}">${esc(g.away)}</a>
         <span class="pts ${aw > hm ? 'win' : ''}">${aw ?? '—'}</span>
       </div>
       <div class="vs">－</div>
       <div class="side home">
         <span class="pts ${hm > aw ? 'win' : ''}">${hm ?? '—'}</span>
-        <a href="#/team/${esc(g.home)}" class="tri">${esc(g.home)}</a>
+        <a href="#/team/${esc(g.home)}"
+           class="tri${FAV.has(g.home) ? ' is-fav' : ''}">${esc(g.home)}</a>
       </div>
     </div>
     <p class="sub center">

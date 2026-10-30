@@ -13,6 +13,11 @@
   --accent: #50d2c1;      /* ミント              rgb(80,210,193) */
   --accent-soft: rgba(80, 210, 193, .12);
   --warn: #ed7088;        /* 向こうの下落色      rgb(237,112,136) */
+  /* 注目チーム（js/app.js の FAV）。ミントと喧嘩しない暖色と紫を選んだ */
+  --fav: #e9b56b;         /* 片方が注目          rgb(233,181,107) */
+  --fav-soft: rgba(233, 181, 107, .09);
+  --fav2: #bb8cf2;        /* 注目チーム同士      rgb(187,140,242) */
+  --fav2-soft: rgba(187, 140, 242, .11);
   --radius: 10px;
   --mono: ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
 }
@@ -507,3 +512,53 @@ svg.odds .ax { fill: var(--muted); font-size: 11px; font-family: var(--mono); }
 .legend .lg.k::before { background: var(--accent); }
 .legend .lg.b { color: var(--warn); }
 .legend .lg.b::before { background: var(--warn); }
+
+/* ---------------------------------------------------------- 注目チーム
+   DET / NYK / OKC / SAS / DEN（js/app.js の FAV が唯一の定義）。
+   片方だけなら琥珀、注目チーム同士なら紫。
+   ★ `.weekday.is-today .game`（クラス3つ）より後ろに、同じ数のクラスで
+     書くこと。`.game.fav` だけだと今日の枠に負ける */
+.games .game.fav {
+  border-color: var(--fav); background: var(--fav-soft);
+  box-shadow: inset 2px 0 0 var(--fav);
+}
+.games .game.fav2 {
+  border-color: var(--fav2); background: var(--fav2-soft);
+  box-shadow: inset 2px 0 0 var(--fav2);
+}
+/* 片方だけ注目なら、その側の略号とスコアだけ色を変える。
+   ★ `.game .match a.result .tri`（クラス4つ）に勝つ数で書く */
+.game.fav .match .result .tri.is-fav,
+.game.fav .match .result .pts.is-fav { color: var(--fav); }
+.game.fav .match a.tm.is-fav { color: var(--fav); }
+/* 注目同士なら両側とも紫にする */
+.game.fav2 .match .result .tri,
+.game.fav2 .match .result .pts { color: var(--fav2); }
+.game.fav2 .match a.tm { color: var(--fav2); }
+.game.fav2 .match .at { color: var(--fav2); opacity: .5; }
+
+/* 凡例 */
+.favkey {
+  display: inline-block; margin-left: 10px; font-size: 12px; font-weight: 600;
+  padding: 1px 8px; border-radius: 999px;
+  color: var(--fav); background: var(--fav-soft);
+  border: 1px solid var(--fav);
+}
+.favkey.k2 { color: var(--fav2); background: var(--fav2-soft);
+             border-color: var(--fav2); }
+
+/* チーム一覧とチームページの見出し */
+.teamrow.is-fav { border-color: var(--fav); background: var(--fav-soft); }
+.teamrow.is-fav .tri { color: var(--fav); }
+.teamhead .tri.is-fav { color: var(--fav); border-color: var(--fav); }
+
+/* チームページの日程表 */
+td a.tm.is-fav { color: var(--fav); font-weight: 600; }
+tr.fav2 { background: var(--fav2-soft); }
+tr.fav2 td a.tm.is-fav { color: var(--fav2); }
+
+/* 試合ページの見出し */
+.gamehead.fav { border-color: var(--fav); background: var(--fav-soft); }
+.gamehead.fav2 { border-color: var(--fav2); background: var(--fav2-soft); }
+.gamehead .tri.is-fav { color: var(--fav); }
+.gamehead.fav2 .tri { color: var(--fav2); }
