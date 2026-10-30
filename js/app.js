@@ -946,6 +946,244 @@ async function renderReport(day) {
     <div class="report">${rep.html}</div>`;
 }
 
+/* ------------------------------------------------------------- 試合 */
+
+/* 試合全体の長さ（秒）。延長は 5 分 = 300 秒ずつ */
+const gameSec = (np) => 2880 + Math.max(0, np - 4) * 300;
+
+/* ピリオドの境目（秒）。ガントと得点推移の目盛りに使う */
+function bounds(np) {
+  const out = [];
+  for (let k = 1; k < np; k++) out.push(k <= 4 ? k * 720 : 2880 + (k - 4) * 300);
+  return out;
+}
+
+const STATUS_CLS = {
+  Out: 'st-out', Doubtful: 'st-d', Questionable: 'st-q',
+  Probable: 'st-p', Available: 'st-a',
+};
+const STATUS_ORDER = ['Out', 'Doubtful', 'Questionable', 'Probable', 'Available'];
+const stTag = (v) => v
+  ? `<span class="st ${STATUS_CLS[v] || ''}">${esc(v)}</span>`
+  : '<span class="dim">—</span>';
+
+const mmss = (sec) => (sec === null || sec === undefined) ? '—'
+  : `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+
+/* クォーター別得点。
+   ★ 出どころを混ぜている。Q1-4 は公式の line_score、延長は PBP 集計しか無い。
+     PBP から採った欄には印を付ける（`quarter_src`） */
+function quarterTable(g) {
+  const tris = [g.away, g.home];
+  const head = g.periods.map((x) => `<th class="n">${esc(x)}</th>`).join('');
+  const rows = tris.map((tri) => {
+    const q = g.quarters[tri] || [];
+    const src = g.quarter_src[tri] || [];
+    const tot = q.reduce((a, b) => a + (b || 0), 0);
+    const cells = q.map((v, k) => {
+      const pbp = src[k] === 'pbp';
+      const t = pbp ? ' title="PBP 集計（公式のクォーター別には延長の欄が無い）"' : '';
+      const val = (v === null || v === undefined) ? '<span class="dim">—</span>' : v;
+      return `<td class="n${pbp ? ' frompbp' : ''}"${t}>${val}</td>`;
+    }).join('');
+    return `<tr><th>${esc(tri)}</th>${cells}<td class="n tot">${tot}</td></tr>`;
+  }).join('');
+  return `<div class="wrap"><table class="qtab">
+    <thead><tr><th>チーム</th>${head}<th class="n">計</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+/* 得点差の推移。ホーム側から見た差を折れ線で出す */
+function scorePath(g) {
+  const path = g.score_path || [];
+  if (path.length < 2) return '';
+  const T = gameSec(g.periods.length);
+  const W = 1000, H = 150, PAD = 18;
+  const bs = bounds(g.periods.length);
+  const mx = Math.max(10, ...path.map(([, h, a]) => Math.abs(h - a)));
+  const X = (sec) => (sec / T) * W;
+  const Y = (m) => (H / 2) - (m / mx) * (H / 2 - PAD);
+  const pts = path.map(([sec, h, a]) => `${X(sec).toFixed(1)},${Y(h - a).toFixed(1)}`)
+    .join(' ');
+  const grid = bs
+    .map((b) => `<line x1="${X(b)}" y1="0" x2="${X(b)}" y2="${H}" class="gl"/>`)
+    .join('');
+  const labels = g.periods.map((nm, k) => {
+    const a = k === 0 ? 0 : bs[k - 1];
+    const b = k === g.periods.length - 1 ? T : bs[k];
+    return `<text x="${(X(a) + X(b)) / 2}" y="${H - 3}" class="pl">${esc(nm)}</text>`;
+  }).join('');
+  /* ★ preserveAspectRatio="none" にしてはいけない。横に引き伸ばされて
+       ラベルの字まで歪む。等比で拡縮して高さは CSS の auto に任せる */
+  return `<svg class="spath" viewBox="0 0 ${W} ${H}">
+    ${grid}
+    <line x1="0" y1="${H / 2}" x2="${W}" y2="${H / 2}" class="zero"/>
+    <polyline points="${pts}" class="line"/>
+    ${labels}
+    <text x="6" y="14" class="pl lead">${esc(g.home)} +${mx}</text>
+    <text x="6" y="${H - 16}" class="pl lead">${esc(g.away)} +${mx}</text>
+  </svg>`;
+}
+
+/* ラインナップ推移。選手ごとの出場区間を帯で出す（HTML のまま。SVG にしない）。
+   ★ 検算に落ちた試合では呼ばない。ピリオド開始5人の推定が外れている可能性があり、
+     黙って出すと「ベンチにいた選手がコートにいる」表示になる */
+function gantt(g, tri) {
+  const list = g.stints[tri] || [];
+  if (!list.length) return '';
+  const T = gameSec(g.periods.length);
+  const bs = bounds(g.periods.length);
+  const seps = bs
+    .map((b) => `<i class="sep" style="left:${(b / T * 100).toFixed(2)}%"></i>`)
+    .join('');
+  const rows = list.map((p) => {
+    const sec = p.iv.reduce((a, [x, y]) => a + (y - x), 0);
+    const bars = p.iv.map(([x, y]) =>
+      `<i class="bar" style="left:${(x / T * 100).toFixed(2)}%;`
+      + `width:${((y - x) / T * 100).toFixed(2)}%" title="${mmss(x)}〜${mmss(y)}"></i>`
+    ).join('');
+    return `<div class="row">
+      <span class="nm">${esc(p.name)}</span>
+      <span class="track">${seps}${bars}</span>
+      <span class="mp">${mmss(sec)}</span>
+    </div>`;
+  }).join('');
+  const axis = g.periods.map((nm, k) => {
+    const a = k === 0 ? 0 : bs[k - 1];
+    const b = k === g.periods.length - 1 ? T : bs[k];
+    return `<span style="width:${((b - a) / T * 100).toFixed(2)}%">${esc(nm)}</span>`;
+  }).join('');
+  return `<div class="gantt">${rows}
+    <div class="row axis"><span class="nm"></span>
+      <span class="track">${axis}</span><span class="mp"></span></div>
+  </div>`;
+}
+
+function boxTable(g, tri) {
+  const list = g.box[tri] || [];
+  if (!list.length) return '<p class="empty">ボックススコアが無い。</p>';
+  const rows = list.map((p) => `<tr>
+    <td><a href="#/p/${p.pid}">${esc(p.name)}</a></td>
+    <td class="n">${mmss(p.sec)}</td>
+    <td class="n b">${p.pts ?? 0}</td>
+    <td class="n">${p.reb ?? 0}</td>
+    <td class="n">${p.ast ?? 0}</td>
+    <td class="n">${p.fgm ?? 0}-${p.fga ?? 0}</td>
+    <td class="n">${p.fg3m ?? 0}-${p.fg3a ?? 0}</td>
+    <td class="n">${p.ftm ?? 0}-${p.fta ?? 0}</td>
+    <td class="n">${p.stl ?? 0}</td>
+    <td class="n">${p.blk ?? 0}</td>
+    <td class="n">${p.tov ?? 0}</td>
+    <td class="n">${p.pf ?? 0}</td>
+    <td class="n ${p.pm > 0 ? 'up' : p.pm < 0 ? 'down' : ''}">${
+      p.pm > 0 ? '+' : ''}${p.pm ?? 0}</td>
+    <td class="n">${(p.usg === null || p.usg === undefined)
+      ? '<span class="dim">—</span>' : (p.usg * 100).toFixed(1)}</td>
+  </tr>`).join('');
+  return `<div class="wrap"><table class="boxtab">
+    <thead><tr><th>選手</th><th class="n">分</th><th class="n">得点</th>
+      <th class="n">Reb</th><th class="n">Ast</th><th class="n">FG</th>
+      <th class="n">3P</th><th class="n">FT</th><th class="n">Stl</th>
+      <th class="n">Blk</th><th class="n">TO</th><th class="n">PF</th>
+      <th class="n">+/-</th><th class="n">USG%</th></tr></thead>
+    <tbody>${rows}</tbody></table></div>`;
+}
+
+/* injury report。
+   ★ 初出と最終の両方を出す。NBA はティップまでに必ず Questionable を
+     Out / Available へ解決するので、最終だけだと Questionable が常にゼロになる。
+     試合前の不確定さは初出にしか残らない */
+function injuryTable(g, tri) {
+  const list = (g.injury[tri] || []).slice().sort((x, y) =>
+    STATUS_ORDER.indexOf(x.first) - STATUS_ORDER.indexOf(y.first)
+    || String(x.name).localeCompare(String(y.name)));
+  const out = g.inactive[tri] || [];
+  if (!list.length && !out.length) {
+    return `<p class="empty">${esc(tri)}: injury report の記録が無い。</p>`;
+  }
+  const rows = list.map((p) => `<tr>
+    <td>${esc(p.name)}</td>
+    <td>${stTag(p.first)}</td>
+    <td>${(p.final && p.final !== p.first) ? stTag(p.final)
+      : '<span class="dim">変化なし</span>'}</td>
+    <td class="dim">${esc(p.reason || '')}</td>
+  </tr>`).join('');
+  const n = {};
+  for (const p of list) n[p.first] = (n[p.first] || 0) + 1;
+  const summary = STATUS_ORDER.filter((k) => n[k]).map((k) => `${k} ${n[k]}`).join(' / ');
+  return `<h3>${esc(tri)}</h3>
+    <p class="sub">初出の時点で ${esc(summary || '記載なし')}${
+      out.length ? `・実際の欠場 ${out.length} 名` : ''}</p>
+    ${list.length ? `<div class="wrap"><table class="injtab">
+      <thead><tr><th>選手</th><th>初出</th><th>最終</th><th>理由</th></tr></thead>
+      <tbody>${rows}</tbody></table></div>` : ''}
+    ${out.length ? `<p class="sub">実際の欠場: ${out.map(esc).join(' / ')}</p>` : ''}`;
+}
+
+async function renderGame(gid) {
+  let g;
+  try {
+    g = await load(`games/${gid}`);
+  } catch (e) {
+    view.innerHTML = `<p class="err">${esc(gid)} の結果が無い。
+      <a href="#/">日程へ</a></p>`;
+    return;
+  }
+  const aw = g.score.away, hm = g.score.home;
+  const warn = [];
+  if (g.check && g.check.quarter_vs_box) {
+    for (const [tri, v] of Object.entries(g.check.quarter_vs_box)) {
+      warn.push(`${tri}: クォーター別の合計 ${v[0]} と公式ボックスの合計 ${v[1]} が合わない`);
+    }
+  }
+  if (g.check && g.check.official_vs_pbp) {
+    for (const [tri, qs] of Object.entries(g.check.official_vs_pbp)) {
+      warn.push(`${tri}: 公式のクォーター別と PBP 集計が Q${qs.join(', Q')} で合わない`);
+    }
+  }
+
+  view.innerHTML = `
+    <p class="sub"><a href="#/d/${esc(g.date)}">&larr; ${fmtDate(g.date)}の日程</a></p>
+
+    <div class="gamehead">
+      <div class="side">
+        <a href="#/team/${esc(g.away)}" class="tri">${esc(g.away)}</a>
+        <span class="pts ${aw > hm ? 'win' : ''}">${aw ?? '—'}</span>
+      </div>
+      <div class="vs">－</div>
+      <div class="side home">
+        <span class="pts ${hm > aw ? 'win' : ''}">${hm ?? '—'}</span>
+        <a href="#/team/${esc(g.home)}" class="tri">${esc(g.home)}</a>
+      </div>
+    </div>
+    <p class="sub center">
+      ${fmtDate(g.date)}${g.tip_et
+        ? `・${esc(g.tip_et)} ET（日本 ${esc(g.tip_jst)}）` : ''}${g.arena
+        ? `・${esc(g.arena)}` : ''}${g.city ? `（${esc(g.city)}）` : ''}${
+        g.periods.length > 4 ? `・<strong>延長 ${g.periods.length - 4}</strong>` : ''}
+    </p>
+
+    ${warn.length ? `<p class="err">${warn.map(esc).join(' / ')}</p>` : ''}
+
+    <h2>クォーター別</h2>
+    ${quarterTable(g)}
+    ${scorePath(g)}
+
+    <h2>ラインナップ推移</h2>
+    ${g.stint_ok
+      ? [g.away, g.home].map((t) => `<h3>${esc(t)}</h3>${gantt(g, t)}`).join('')
+      : `<p class="empty">この試合は出場区間の検算に通らなかったので出さない。
+         PBP には各ピリオドの<strong>開始5人</strong>が記録されておらず、
+         交代記録から推定しているため、合わない試合は出すと誤りになる。</p>`}
+
+    <h2>injury report</h2>
+    ${[g.away, g.home].map((t) => injuryTable(g, t)).join('')}
+
+    <h2>ボックススコア</h2>
+    ${[g.away, g.home].map((t) => `<h3>${esc(t)}</h3>${boxTable(g, t)}`).join('')}
+  `;
+}
+
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const nav = { schedule: 'on', teams: '', reports: '' };
@@ -960,6 +1198,8 @@ async function route() {
     } else if (parts[0] === 'p' && parts[1]) {
       nav.schedule = ''; nav.teams = 'on';
       await renderPlayer(parts[1]);
+    } else if (parts[0] === 'game' && parts[1]) {
+      await renderGame(parts[1]);
     } else if (parts[0] === 'reports') {
       nav.schedule = ''; nav.reports = 'on';
       await renderReports();
