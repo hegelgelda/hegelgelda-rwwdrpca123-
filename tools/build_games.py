@@ -54,6 +54,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import os
 import subprocess
 import sys
@@ -82,6 +83,19 @@ SEASON = "2026-27"
 #   `BRK` は Basketball-Reference 式の略号。こちらの tricode は `BKN`。
 EXCLUDE_TRI = {"CHI", "BKN", "NOP", "SAC", "UTA", "MIL"}
 TRI_ALIAS = {"BRK": "BKN", "PHO": "PHX", "GS": "GSW", "NO": "NOP", "NY": "NYK"}
+
+# polymarket の板グラフ（別プロジェクト）。PNG を WebP に直して持ってくる。
+# ★ HTML 版は **1 試合 17 MB**（plotly を丸ごと抱えている）。置けないので PNG 側を使う。
+#   1600x2000 の PNG が 673 KB、WebP(q80) で 227 KB。
+# ★ ファイル名の日付は **ティップの UTC 日付**で、こちらの `game_date`（ET）とは
+#   ずれる。20:00 ET の試合は翌日の UTC 日付になる。ET 日付で突き合わせると
+#   36 件中 14 件が外れる（実測）。
+# ★ 略号は ESPN 式。NY/SA/GS/WSH などこちらの tricode と違う。
+VIZ_PNG = Path(os.environ.get("NBA_VIZ_PNG")
+               or r"C:\polymarket\data\nba_board\viz\games_png")
+VIZ_ALIAS = {"NY": "NYK", "SA": "SAS", "GS": "GSW", "WSH": "WAS",
+             "NO": "NOP", "UTAH": "UTA", "BRK": "BKN", "PHO": "PHX"}
+VIZ_INDEX: dict = {}      # (UTC日付, away, home) -> PNG のパス。main で作る
 
 # VPS から取ってくる中間ファイル（injury とオッズ）
 HOST = os.environ.get("NBA_LIVE_HOST", "root@155.138.226.166")
@@ -145,6 +159,50 @@ def pull(script: str, remote: str, local: Path) -> dict:
         return {}
     with open(local, encoding="utf-8") as f:
         return json.load(f).get("games", {})
+
+
+def viz_index() -> dict:
+    """polymarket の PNG を (UTC日付, away, home) で引ける形にする。"""
+    out = {}
+    if not VIZ_PNG.is_dir():
+        print("  [warn] polymarket の viz が無い: %s" % VIZ_PNG)
+        return out
+    pat = re.compile(r"(\d{4}-\d{2}-\d{2})_([A-Z]+)@([A-Z]+)\.png$")
+    bad = 0
+    for p in VIZ_PNG.iterdir():
+        m = pat.match(p.name)
+        if not m:
+            bad += 1
+            continue
+        d, aw, hm = m.group(1), m.group(2), m.group(3)
+        out[(d, VIZ_ALIAS.get(aw, aw), VIZ_ALIAS.get(hm, hm))] = p
+    print("  viz: %d 件%s" % (len(out), "（形が違う %d 件は無視）" % bad if bad else ""))
+    return out
+
+
+def viz_make(gid: str, tip_utc, away: str, home: str, force: bool) -> int:
+    """その試合の板グラフがあれば WebP にして public/data1/viz/ に置く。"""
+    if tip_utc is None or not VIZ_INDEX:
+        return 0
+    # ★ DuckDB は tz 付きの値を **Asia/Tokyo** で返す。`.date()` をそのまま取ると
+    #   JST の日付になり、UTC 日付と 1 日ずれる試合がある（36 件中 22 件しか
+    #   当たらなかった）。必ず UTC に直してから日付を取ること。
+    key = (tip_utc.astimezone(timezone.utc).date().isoformat(), away, home)
+    src = VIZ_INDEX.get(key)
+    if src is None:
+        return 0
+    dst = OUT / "viz" / ("%s.webp" % gid)
+    if dst.exists() and not force and dst.stat().st_mtime >= src.stat().st_mtime:
+        return 1
+    try:
+        from PIL import Image
+    except ImportError:
+        print("  [warn] Pillow が無いので板グラフを変換できない")
+        return 0
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    with Image.open(src) as im:
+        im.convert("RGB").save(dst, "WEBP", quality=80, method=6)
+    return 1
 
 
 def connect():
@@ -464,6 +522,7 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj, odds):
         "periods": periods, "quarters": quarters, "quarter_src": qsrc,
         "check": check, "stint_ok": stint_ok, "stint_src": stint_src,
         "box": box, "qbox": qbox, "stints": stints, "score_path": path,
+        "viz": viz_make(gid, tip_utc, away, home, False),
         "inactive": inactive, "injury": injury,
         "odds": od.get("series") or {}, "odds_close": od.get("close") or {},
     }
@@ -482,6 +541,9 @@ def main() -> None:
 
     exclude = {TRI_ALIAS.get(x.strip().upper(), x.strip().upper())
                for x in (a.exclude or "").split(",") if x.strip()}
+
+    global VIZ_INDEX
+    VIZ_INDEX = viz_index()
 
     inj = {} if a.no_injury else pull("export_injury_games.py", INJ_REMOTE, INJ_LOCAL)
     odds = {} if a.no_injury else pull("export_odds_games.py", ODDS_REMOTE, ODDS_LOCAL)
@@ -503,6 +565,9 @@ def main() -> None:
             if fp.exists():
                 fp.unlink()
                 removed += 1
+            vp = OUT / "viz" / ("%s.webp" % gid)
+            if vp.exists():
+                vp.unlink()
             skipped += 1
             sc = con.execute(
                 "select team_abbreviation, sum(pts) from player_game_base "
@@ -543,8 +608,11 @@ def main() -> None:
     print("書いた %d / ページあり %d / 除外 %d（%s）%s"
           % (made, npage, skipped, ",".join(sorted(exclude)) or "なし",
              " / 消した %d" % removed if removed else ""))
-    print("合計 %.2f MB（ページ 1 件 %.1f KB）"
-          % (total / 1e6, total / 1024 / max(1, npage)))
+    vdir = OUT / "viz"
+    vn = len(list(vdir.glob("*.webp"))) if vdir.is_dir() else 0
+    vb = sum(p.stat().st_size for p in vdir.glob("*.webp")) if vdir.is_dir() else 0
+    print("合計 %.2f MB（ページ 1 件 %.1f KB）/ 板グラフ %d 件 %.1f MB"
+          % (total / 1e6, total / 1024 / max(1, npage), vn, vb / 1e6))
     print("索引: %s" % (OUT / "games_index.json"))
 
 

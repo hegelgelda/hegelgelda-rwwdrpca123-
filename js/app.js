@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'beda0814';
+const DATA_V = 'd1a4f3ad';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -1194,6 +1194,45 @@ function injuryTable(g, tri) {
     ${out.length ? `<p class="sub">実際の欠場: ${out.map(esc).join(' / ')}</p>` : ''}`;
 }
 
+/* ---- コメント記録 -----------------------------------------------------
+   ★ このサイトは GitHub Pages の静的ページで、書き込み先のサーバが無い。
+     記録は **ブラウザの localStorage** に置く。つまり
+     **その端末のそのブラウザにしか残らない**（別の端末からは見えないし、
+     閲覧データを消すと消える）。リポジトリに残したいなら、別途
+     書き出して `build_games.py` 側で JSON に焼き込む仕掛けが要る。
+   ★ プライベートウィンドウや設定によっては読み書きで例外が飛ぶので、
+     必ず try で囲んで「読めなくても画面は出る」ようにする */
+
+const NOTE_KEY = (gid) => `nba.note.${gid}`;
+
+function notesLoad(gid) {
+  try {
+    const v = JSON.parse(localStorage.getItem(NOTE_KEY(gid)) || '[]');
+    return Array.isArray(v) ? v : [];
+  } catch (e) { return []; }
+}
+
+function notesSave(gid, list) {
+  try { localStorage.setItem(NOTE_KEY(gid), JSON.stringify(list)); return true; }
+  catch (e) { return false; }
+}
+
+const noteStamp = (iso) => {
+  const d = new Date(iso);
+  const p = (n) => String(n).padStart(2, '0');
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}`
+    + ` ${p(d.getHours())}:${p(d.getMinutes())}`;
+};
+
+function notesHtml(list) {
+  if (!list.length) return '<p class="empty">まだ記録が無い。</p>';
+  return list.map((n, i) => `<div class="nitem">
+    <div class="nhead"><span class="nt">${esc(noteStamp(n.t))}</span>
+      <button class="ndel" data-i="${i}" title="この記録を消す">×</button></div>
+    <div class="nc">${esc(n.c)}</div>
+  </div>`).join('');
+}
+
 /* ---- 試合前のオッズ -------------------------------------------------- */
 
 const ODDS_META = {
@@ -1330,9 +1369,24 @@ async function renderGame(gid) {
 
     ${warn.length ? `<p class="err">${warn.map(esc).join(' / ')}</p>` : ''}
 
-    <h2>クォーター別</h2>
-    ${quarterTable(g)}
-    ${scorePath(g)}
+    <div class="sidebyside">
+      <section class="pane">
+        <h2>クォーター別</h2>
+        ${quarterTable(g)}
+        ${scorePath(g)}
+      </section>
+      <section class="pane note">
+        <h2>コメント記録</h2>
+        <div class="notebox"><div class="noteinner">
+          <div class="notelist" id="notelist"></div>
+          <form id="noteform">
+            <textarea id="notetext" rows="2"
+              placeholder="この試合について（記録するとこの端末に残る）"></textarea>
+            <button type="submit">記録</button>
+          </form>
+        </div></div>
+      </section>
+    </div>
 
     <h2>ラインナップ推移</h2>
     ${g.stint_ok ? `<p class="sub">${g.stint_src === 'rotation'
@@ -1358,6 +1412,9 @@ async function renderGame(gid) {
           <div id="oddswrap"></div>`
           : `<p class="empty">この試合のオッズは無い。収集を始めたのが
              2026-10-23 なので、それより前の試合には記録がない。</p>`}
+        ${g.viz ? `<p class="vizrow"><a class="vizbtn" target="_blank"
+            rel="noopener" href="${DATA}/viz/${esc(g.game_id)}.webp"
+            >polymarket の板グラフを開く ↗</a></p>` : ''}
       </section>
       <section class="pane inj">
         <h2>injury report</h2>
@@ -1374,6 +1431,36 @@ async function renderGame(gid) {
     </div>
     <div id="boxwrap"></div>
   `;
+
+  /* コメント記録。保存先は localStorage（この端末のこのブラウザだけ） */
+  const nl = document.getElementById('notelist');
+  if (nl) {
+    let notes = notesLoad(gid);
+    const draw = () => { nl.innerHTML = notesHtml(notes); };
+    draw();
+    document.getElementById('noteform').onsubmit = (e) => {
+      e.preventDefault();
+      const ta = document.getElementById('notetext');
+      const c = ta.value.trim();
+      if (!c) return;
+      const next = [{ t: new Date().toISOString(), c }, ...notes];
+      if (!notesSave(gid, next)) {
+        alert('この環境では記録を保存できない（localStorage が使えない）。');
+        return;
+      }
+      notes = next;
+      ta.value = '';
+      draw();
+    };
+    nl.onclick = (e) => {
+      const b = e.target.closest('button[data-i]');
+      if (!b) return;
+      const next = notes.filter((_, i) => i !== Number(b.dataset.i));
+      notesSave(gid, next);
+      notes = next;
+      draw();
+    };
+  }
 
   /* オッズの切り替え。既定はマネーライン */
   const ow = document.getElementById('oddswrap');

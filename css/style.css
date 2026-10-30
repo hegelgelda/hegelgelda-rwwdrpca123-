@@ -414,7 +414,9 @@ svg.spath .zero { stroke: var(--line); stroke-width: 1;
                   vector-effect: non-scaling-stroke; }
 svg.spath .gl { stroke: var(--line); stroke-dasharray: 3 4;
                 vector-effect: non-scaling-stroke; }
-svg.spath .pl { fill: var(--muted); font-size: 11px; text-anchor: middle;
+/* ★ 段が半分の幅になったので、縮んだときに読めるよう文字は大きめに置く
+   （11px のままだと実寸 6px 程度になる） */
+svg.spath .pl { fill: var(--muted); font-size: 16px; text-anchor: middle;
                 font-family: var(--mono); }
 /* 端のラベルだけ左寄せ。既定の text-anchor:middle だと枠の外に出て切れる */
 svg.spath .pl.lead { text-anchor: start; }
@@ -598,4 +600,55 @@ table.injtab .rsn {
 table.injtab .hb {
   display: block; font-size: 11px; color: var(--muted);
   font-family: var(--mono); margin-top: 2px; white-space: nowrap;
+}
+
+/* ------------------------------------------- クォーター別の右：コメント記録
+   ★ 保存先は localStorage。**この端末のこのブラウザにしか残らない**
+     （js/app.js の注記を参照）。
+   injury と同じで、中身を absolute にしないと左の段と縦幅が揃わない */
+.sidebyside .note .notebox { position: relative; flex: 1 1 auto; min-height: 240px; }
+.sidebyside .note .noteinner {
+  position: absolute; inset: 0; display: flex; flex-direction: column; gap: 10px;
+}
+.notelist { flex: 1 1 auto; overflow-y: auto; min-height: 0; padding-right: 6px; }
+.notelist .empty { padding: 12px 0; font-size: 13px; }
+.nitem { border-bottom: 1px solid var(--line); padding: 8px 0; }
+.nitem:first-child { padding-top: 0; }
+.nhead { display: flex; align-items: baseline; justify-content: space-between; }
+.nhead .nt { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.ndel {
+  background: none; border: 0; color: var(--line); cursor: pointer;
+  font-size: 15px; line-height: 1; padding: 0 2px;
+}
+.ndel:hover { color: var(--warn); }
+.nc { white-space: pre-wrap; font-size: 13px; margin-top: 3px; }
+
+#noteform { display: flex; gap: 8px; align-items: flex-end; }
+#noteform textarea {
+  flex: 1 1 auto; min-width: 0; resize: vertical; font: inherit; font-size: 13px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 7px 10px;
+}
+#noteform textarea:focus { outline: none; border-color: var(--accent); }
+#noteform button {
+  font: inherit; font-weight: 600; cursor: pointer; white-space: nowrap;
+  background: var(--accent-soft); color: var(--accent);
+  border: 1px solid var(--accent); border-radius: 999px; padding: 8px 18px;
+}
+#noteform button:hover { background: var(--accent); color: #04060c; }
+
+/* polymarket の板グラフへの入口（オッズ枠の余白に置く） */
+.vizrow { margin: 12px 0 0; }
+a.vizbtn {
+  display: inline-block; font-size: 13px; font-weight: 600;
+  padding: 7px 16px; border-radius: 999px;
+  color: var(--accent); background: var(--accent-soft);
+  border: 1px solid var(--accent);
+}
+a.vizbtn:hover { background: var(--accent); color: #04060c; text-decoration: none; }
+
+@media (max-width: 900px) {
+  .sidebyside .note .notebox { min-height: 0; }
+  .sidebyside .note .noteinner { position: static; }
+  .notelist { overflow: visible; }
 }
