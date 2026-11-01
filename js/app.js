@@ -17,7 +17,7 @@ const DATA = './public/data1';
 const DATA_V = '2fbdbc95';
 const view = document.getElementById('view');
 
-/* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scriptsook_viz が毎時作って上げる） ----
+/* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
    一覧 index.json の id は `日付(ET)_AWAY-HOME`（チームの略号はこのサイトと同じ）。
    ★ 読めなくても日程は出す。一覧が無い・Cloudflare が止まっているときはリンクを出さないだけ */
 const BOOKS_URL = 'https://hegelgelda-nba-books.pages.dev';
