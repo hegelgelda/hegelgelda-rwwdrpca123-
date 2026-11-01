@@ -332,7 +332,8 @@ def main() -> None:
             from team_rating_snapshot where as_of = ?
             order by net desc""", [as_of]).df()
         pr = con.execute("""
-            select game_id, pred, sigma, p_home, total, pace_hat
+            select game_id, pred, sigma, p_home, total, pace_hat,
+                   coalesce(av, 0) as av, any_value(model) over () as model
             from stage1_future
             where as_of = (select max(as_of) from stage1_future)""").df()
         games = {}
@@ -340,11 +341,16 @@ def main() -> None:
             games[x["game_id"]] = {
                 "pred": r1(x["pred"], 2), "p": r1(x["p_home"] * 100, 1),
                 "total": r1(x["total"], 1), "pace": r1(x["pace_hat"], 1),
+                # ★ 1 なら「その試合の injury report が出ていて可用性を使えた」。
+                #   0 はレポートがまだ無く、欠場を見ずに出した予測
+                "av": int(x["av"]),
             }
         tot += write(a.out, "model.json", {
             "season": SEASON,
             "as_of": str(as_of),
             "sigma": r1(float(pr.sigma.iloc[0]), 2) if len(pr) else None,
+            "model": str(pr.model.iloc[0]) if len(pr) else None,
+            "n_av": int(pr.av.sum()) if len(pr) else 0,
             "ratings": [{k: (v if k == "tri" else r1(v, 2))
                          for k, v in x.items()} for x in rt.to_dict("records")],
             "games": games,

@@ -817,3 +817,9 @@ table.rate tr.fav td { background: var(--fav-soft); }
 table.vstab { white-space: nowrap; font-size: 13px; }
 table.vstab td, table.vstab th { padding: 6px 8px; }
 table.vstab .at { color: var(--line); margin: 0 3px; }
+
+/* injury report を織り込めた予測の印 */
+.mpred .avok {
+  margin-left: 5px; font-size: 10px; padding: 0 5px; border-radius: 999px;
+  background: var(--accent-soft); color: var(--accent);
+}

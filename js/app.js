@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '5251ace8';
+const DATA_V = 'b3ba7470';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -273,8 +273,13 @@ function gameRow(g) {
     const tri = homeFav ? g.h : g.a;
     const pts = Math.abs(mp.pred).toFixed(1);
     const p = homeFav ? mp.p : 100 - mp.p;
-    return `<span class="mpred" title="段階1 の予測（可用性なし）"
-      >${esc(tri)} −${pts}<span class="pp">${p.toFixed(0)}%</span></span>`;
+    /* `av: 1` は injury report を織り込めた試合。0 は欠場を見ていない */
+    return `<span class="mpred" title="${mp.av
+        ? '段階1 の予測（injury report を織り込み済み）'
+        : '段階1 の予測。この試合の injury report はまだ出ていない'}"
+      >${esc(tri)} −${pts}<span class="pp">${p.toFixed(0)}%</span>${
+      mp.av ? '<span class="avok" title="欠場を織り込み済み">injury</span>' : ''
+      }</span>`;
   })();
   /* ★ `p: 0` は「個別ページを作っていない試合」。容量のため一部のチームが
      絡む試合はページを作っていない（tools/build_games.py の EXCLUDE_TRI）。
@@ -715,7 +720,10 @@ async function renderStandings() {
         上の表と違って<strong>相手の強さで補正してあり、古い試合は軽い</strong>。
         単位は 100 ポゼッションあたりの点。
         <strong>def は正が良い守備</strong>で、総合 = off + def。
-        可用性（欠場）は<strong>使っていない</strong>（v1）。</p>
+        ${(md.model || '').includes('out_pre')
+          ? `可用性は<strong>インジャリーレポートから</strong>織り込む（v2）。
+             いまレポートが出ている試合は ${md.n_av} 件。`
+          : '可用性（欠場）は<strong>使っていない</strong>（v1）。'}</p>
       <div class="wrap"><table class="career rate">
         <thead><tr><th class="n">#</th><th>チーム</th><th class="n">攻撃</th>
           <th class="n">守備</th><th class="n">総合</th></tr></thead>
