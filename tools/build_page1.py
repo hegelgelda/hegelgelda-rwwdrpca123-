@@ -325,17 +325,21 @@ def main() -> None:
     # ★ 同じ試合を何度も予測するので、**一番新しい基準日のぶん**だけ出す。
     #   過去の予測は DB に残す（市場と同じ土俵で測るのに要る）。
     if has_table(con, "stage1_future") and has_table(con, "team_rating_snapshot"):
+        # ★ 1 日に何度も走らせるので、**試合ごとに一番新しい予測**を採る。
+        #   「朝の予測」と「直前の予測」は両方 DB に残っている。
         as_of = con.execute(
-            "select max(as_of) from team_rating_snapshot").fetchone()[0]
+            "select max(as_of_utc) from team_rating_snapshot").fetchone()[0]
         rt = con.execute("""
             select team as tri, off, def, net
-            from team_rating_snapshot where as_of = ?
+            from team_rating_snapshot where as_of_utc = ?
             order by net desc""", [as_of]).df()
         pr = con.execute("""
-            select game_id, pred, sigma, p_home, total, pace_hat,
-                   coalesce(av, 0) as av, any_value(model) over () as model
-            from stage1_future
-            where as_of = (select max(as_of) from stage1_future)""").df()
+            select f.game_id, f.pred, f.sigma, f.p_home, f.total, f.pace_hat,
+                   coalesce(f.av, 0) as av, f.model, f.tip_lead_h, f.as_of_utc
+            from stage1_future f
+            join (select game_id, max(as_of_utc) as t from stage1_future
+                  group by 1) m
+              on m.game_id = f.game_id and m.t = f.as_of_utc""").df()
         games = {}
         for x in pr.to_dict("records"):
             games[x["game_id"]] = {
@@ -344,10 +348,13 @@ def main() -> None:
                 # ★ 1 なら「その試合の injury report が出ていて可用性を使えた」。
                 #   0 はレポートがまだ無く、欠場を見ずに出した予測
                 "av": int(x["av"]),
+                # ★ 予測した時点がティップの何時間前か。市場側の「何分前の値か」
+                #   と対になる量で、これが無いと公平に比べられない
+                "lead": r1(x["tip_lead_h"], 1),
             }
         tot += write(a.out, "model.json", {
             "season": SEASON,
-            "as_of": str(as_of),
+            "as_of": str(as_of)[:16],
             "sigma": r1(float(pr.sigma.iloc[0]), 2) if len(pr) else None,
             "model": str(pr.model.iloc[0]) if len(pr) else None,
             "n_av": int(pr.av.sum()) if len(pr) else 0,

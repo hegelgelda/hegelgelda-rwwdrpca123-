@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'b3ba7470';
+const DATA_V = '3b921dd9';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -569,15 +569,18 @@ async function renderMarket() {
   const up = d.upcoming || [];
   const upTable = !up.length ? '' : `
     <h2>これからの試合：モデル vs 市場</h2>
-    <p class="sub">${up.length} 試合。モデルは段階1（可用性なし・v1）、
-      市場は Kalshi の最新値。<strong>どちらもホーム基準</strong>で、
-      得点差は正がホーム有利。差はモデル − 市場。
-      <strong>市場はまだ動く</strong>（終値ではない）。
-      右端は「その市場の値がティップの何時間前のものか」。</p>
+    <p class="sub">${up.length} 試合。モデルは段階1、市場は Kalshi の最新値。
+      <strong>どちらもホーム基準</strong>で、得点差は正がホーム有利。
+      差はモデル − 市場。<strong>どちらもまだ動く</strong>（終値ではない）。
+      右の 2 列は「その値がティップの何時間前のものか」で、
+      <strong>公平に比べるにはこの 2 つが揃っている必要がある</strong>。
+      <span class="avok">injury</span> はその試合の
+      injury report を織り込めた予測。</p>
     <div class="wrap"><table class="career vstab">
       <thead><tr><th class="n">日付</th><th>対戦</th>
         <th class="n">モデル</th><th class="n">市場</th><th class="n">差</th>
         <th class="n">モデル%</th><th class="n">市場%</th><th class="n">差</th>
+        <th class="n">モデルの時点</th>
         <th class="n">市場の時点</th></tr></thead>
       <tbody>${up.map((g) => `<tr>
         <td class="n dim">${esc(g.d.slice(5).replace('-', '/'))}</td>
@@ -593,6 +596,8 @@ async function renderMarket() {
         <td class="n">${num(g.m_ml)}%</td>
         <td class="n ${Math.abs(g.d_p ?? 0) >= 8 ? 'warnv' : 'dim'}">${
           g.d_p === undefined ? '—' : (g.d_p > 0 ? '+' : '') + num(g.d_p)}pt</td>
+        <td class="n dim">${g.lead === undefined || g.lead === null
+          ? '—' : hhmm(g.lead * 60)}${g.av ? '<span class="avok">injury</span>' : ''}</td>
         <td class="n dim">${hhmm(g.m_ml_m)}</td>
       </tr>`).join('')}</tbody>
     </table></div>

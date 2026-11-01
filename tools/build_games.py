@@ -683,6 +683,8 @@ def main() -> None:
             rec["pred"] = m.get("pred")
             rec["p"] = m.get("p")
             rec["total"] = m.get("total")
+            rec["lead"] = m.get("lead")      # 予測した時点がティップの何時間前か
+            rec["av"] = m.get("av")          # injury を織り込めたか
             # 差はホーム基準。正ならモデルのほうがホーム寄り
             if rec.get("m_sp") is not None and rec["pred"] is not None:
                 rec["d_sp"] = round(rec["pred"] + rec["m_sp"], 2)
