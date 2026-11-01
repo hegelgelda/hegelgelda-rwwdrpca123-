@@ -36,13 +36,14 @@ a:hover { text-decoration: underline; }
 
 /* ---------------------------------------------------------- header */
 header.site {
-  display: flex; align-items: center; gap: 24px;
+  display: flex; align-items: center; gap: 24px; flex-wrap: wrap;
   padding: 12px 16px; border-bottom: 1px solid var(--line);
   position: sticky; top: 0; background: var(--bg); z-index: 10;
 }
 .brand { font-weight: 700; font-size: 17px; color: var(--ink); }
 .brand span { color: var(--muted); font-weight: 500; }
-header.site nav { display: flex; gap: 16px; }
+header.site nav { display: flex; gap: 16px; flex-wrap: wrap; }
+header.site nav a { white-space: nowrap; }
 header.site nav a { color: var(--muted); padding: 4px 2px; }
 header.site nav a.on { color: var(--ink); box-shadow: inset 0 -2px 0 var(--accent); }
 
@@ -673,3 +674,97 @@ table.loggame .wl { margin-right: 4px; }
 table.loggame a.res { font-weight: 600; }
 table.loggame a.res:hover { text-decoration: underline; }
 table.loggame .nolink { cursor: default; }
+
+/* ------------------------------------------------------------- 順位表 */
+.standgrid { display: grid; gap: 28px; }
+table.stand { font-size: 13px; white-space: nowrap; }
+table.stand td, table.stand th { padding: 6px 7px; }
+table.stand td.b { color: var(--ink); font-weight: 700; }
+table.stand td.up { color: var(--accent); }
+table.stand td.down { color: var(--warn); }
+table.stand .nm { font-size: 12px; margin-left: 7px; }
+table.stand tr.fav td { background: var(--fav-soft); }
+table.stand tr.fav .nm { color: var(--fav); }
+
+/* ------------------------------------------------- 選手一覧（今季） */
+table.league { font-size: 13px; white-space: nowrap; }
+table.league td, table.league th { padding: 6px 7px; }
+table.league td.b { color: var(--ink); font-weight: 700; }
+table.league td.up { color: var(--accent); }
+table.league td.down { color: var(--warn); }
+/* 見出しは押せる。並べ替えに使っている列だけ色を変える */
+table.league thead th { cursor: pointer; user-select: none; }
+table.league thead th:hover { color: var(--ink); }
+table.league thead th.sorted { color: var(--accent); }
+
+.lbar {
+  display: flex; align-items: center; gap: 10px; flex-wrap: wrap;
+  margin: 14px 0 10px;
+}
+.lbar input[type="search"] {
+  font: inherit; font-size: 13px; min-width: 200px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 10px;
+}
+.lbar input[type="number"] {
+  font: inherit; font-size: 13px; width: 64px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px;
+}
+.lbar input:focus { outline: none; border-color: var(--accent); }
+.lbar label { color: var(--muted); font-size: 12px;
+              display: flex; align-items: center; gap: 6px; }
+.lbar .spacer { flex: 1; }
+.lbar .count { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+/* --------------------------------------------- チームページの成績帯 */
+.statstrip {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 1px; margin: 14px 0 4px;
+  background: var(--line); border: 1px solid var(--line);
+  border-radius: var(--radius); overflow: hidden;
+}
+.statstrip > div { background: var(--panel); padding: 9px 12px; }
+.statstrip .k { display: block; color: var(--muted); font-size: 11px; }
+.statstrip .v { font-size: 16px; font-weight: 700; font-family: var(--mono); }
+.statstrip .k2 { margin-left: 7px; font-size: 12px; font-family: var(--mono);
+                 color: var(--muted); }
+.statstrip .k2.up { color: var(--accent); }
+.statstrip .k2.down { color: var(--warn); }
+
+/* ------------------------------------------------------------- 検索 */
+header.site .find { position: relative; margin-left: auto; }
+header.site .find input {
+  font: inherit; font-size: 13px; width: 180px;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 14px;
+}
+header.site .find input:focus { outline: none; border-color: var(--accent);
+                                width: 220px; }
+#qres {
+  position: absolute; right: 0; top: calc(100% + 6px); z-index: 20;
+  min-width: 240px; max-height: 60vh; overflow-y: auto;
+  background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 4px;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, .45);
+}
+#qres a {
+  display: flex; justify-content: space-between; gap: 14px;
+  padding: 7px 10px; border-radius: 7px; color: var(--ink); font-size: 13px;
+}
+#qres a:hover { background: var(--hover); text-decoration: none; }
+#qres a .dim { font-family: var(--mono); font-size: 12px; }
+
+/* データの鮮度 */
+.asof { color: var(--muted); font-size: 12px; font-family: var(--mono); }
+
+@media (max-width: 720px) {
+  header.site .find { margin-left: 0; width: 100%; }
+  header.site .find input, header.site .find input:focus { width: 100%; }
+  #qres { left: 0; right: 0; }
+}
+
+/* ★ grid の子は既定で `min-width: auto`。中の表が広いと列ごと押し広げられ、
+   ページ全体が横スクロールする（375px の画面が 908px になった）。
+   `.wrap` の中でだけ横スクロールさせるために 0 を明示する */
+.standgrid > section { min-width: 0; }

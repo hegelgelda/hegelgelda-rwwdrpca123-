@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'a8339e1d';
+const DATA_V = '41d75301';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -56,9 +56,12 @@ const favCls = (a, h) => {
   const n = (FAV.has(a) ? 1 : 0) + (FAV.has(h) ? 1 : 0);
   return n === 2 ? ' fav2' : n ? ' fav' : '';
 };
-/* 色の意味を 1 行添える。凡例が無いと何色なのか分からない */
-const favLegend = () => `<span class="favkey">注目 ${[...FAV].join(' ')}</span>`
-  + `<span class="favkey k2">注目同士</span>`;
+/* 色の意味を 1 行添える。凡例が無いと何色なのか分からない。
+   `both` が偽なら「注目同士」の紫は出さない（順位表のように
+   1 行 1 チームの画面では紫が出ないため） */
+const favLegend = (both = true) => `<span class="favkey">注目 ${
+  [...FAV].join(' ')}</span>`
+  + (both ? `<span class="favkey k2">注目同士</span>` : '');
 
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g,
   (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -286,6 +289,175 @@ function gameRow(g) {
   </div>`;
 }
 
+/* ------------------------------------------------------------- 順位表 */
+
+/* ★ `team_standings_daily` は使っていない。派生表で進行中の季に
+     追いついていないため、`build_page1.py` が raw から作り直している。 */
+async function renderStandings() {
+  const st = await load('standings');
+  const CONF = ['East', 'West'];
+  const table = (conf) => {
+    const rows = st.teams.filter((t) => t.conf === conf);
+    if (!rows.length) return '';
+    return `<section>
+      <h2>${conf === 'East' ? 'イースタン' : 'ウェスタン'}</h2>
+      <div class="wrap"><table class="stand">
+        <thead><tr>
+          <th class="n">#</th><th>チーム</th>
+          <th class="n">勝</th><th class="n">敗</th><th class="n">勝率</th>
+          <th class="n">GB</th><th class="n">ホーム</th><th class="n">アウェイ</th>
+          <th class="n">直近10</th><th class="n">連</th>
+          <th class="n">得点</th><th class="n">失点</th><th class="n">得失</th>
+          <th class="n">ORtg</th><th class="n">DRtg</th><th class="n">Net</th>
+          <th class="n">Pace</th>
+        </tr></thead>
+        <tbody>${rows.map((t, i) => `<tr class="${FAV.has(t.tri) ? 'fav' : ''}">
+          <td class="n dim">${i + 1}</td>
+          <td><a class="tm${FAV.has(t.tri) ? ' is-fav' : ''}"
+                 href="#/team/${esc(t.tri)}">${esc(t.tri)}</a>
+              <span class="dim nm">${esc(t.name)}</span></td>
+          <td class="n b">${t.w}</td><td class="n">${t.l}</td>
+          <td class="n">${t.pct.toFixed(3).replace(/^0/, '')}</td>
+          <td class="n dim">${t.gb ? num(t.gb) : '—'}</td>
+          <td class="n dim">${t.hw}-${t.hl}</td>
+          <td class="n dim">${t.aw}-${t.al}</td>
+          <td class="n dim">${t.w10}-${t.l10}</td>
+          <td class="n ${t.stk[0] === 'W' ? 'up' : 'down'}">${esc(t.stk)}</td>
+          <td class="n">${num(t.pf)}</td><td class="n">${num(t.pa)}</td>
+          <td class="n ${t.diff > 0 ? 'up' : t.diff < 0 ? 'down' : ''}">${
+            t.diff > 0 ? '+' : ''}${num(t.diff)}</td>
+          <td class="n">${num(t.ortg)}</td><td class="n">${num(t.drtg)}</td>
+          <td class="n ${t.net > 0 ? 'up' : t.net < 0 ? 'down' : ''}">${
+            t.net > 0 ? '+' : ''}${num(t.net)}</td>
+          <td class="n dim">${num(t.pace)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+    </section>`;
+  };
+  view.innerHTML = `
+    <h1>順位</h1>
+    <p class="sub">${esc(st.season)} レギュラーシーズン・${
+      esc(st.asof || '')} 時点。${favLegend(false)}</p>
+    <div class="standgrid">${CONF.map(table).join('')}</div>
+    <p class="sub">GB はカンファレンス首位との差。ORtg / DRtg は
+      <strong>ポゼッションで重み付けした</strong>平均（試合ごとの率の単純平均
+      ではない）。Net = ORtg − DRtg。</p>`;
+}
+
+/* ------------------------------------------------------- 選手一覧（今季） */
+
+/* 並べ替えの状態。列キーと向き（-1 が大きい順） */
+let LSORT = { k: 'pts', d: -1 };
+let LMIN = 1;      /* 最低試合数 */
+let LQ = '';       /* 名前・チームの絞り込み */
+
+const LCOLS = [
+  { k: 'n', t: '選手', s: 0 },
+  { k: 't', t: 'チーム', s: 0 },
+  { k: 'g', t: '試合' }, { k: 'gs', t: '先発' }, { k: 'mpg', t: 'MP' },
+  { k: 'pts', t: 'PTS' }, { k: 'reb', t: 'REB' }, { k: 'ast', t: 'AST' },
+  { k: 'stl', t: 'STL' }, { k: 'blk', t: 'BLK' }, { k: 'tov', t: 'TOV' },
+  { k: 'fg', t: 'FG%' }, { k: 'tp', t: '3P%' }, { k: 'ft', t: 'FT%' },
+  { k: 'ts', t: 'TS%' }, { k: 'pm', t: '+/-' },
+];
+
+function leagueRows(all) {
+  const q = fold(LQ.trim());
+  const list = all.filter((p) => p.g >= LMIN
+    && (!q || fold(p.n).includes(q) || fold(p.t).includes(q)));
+  const k = LSORT.k;
+  list.sort((x, y) => {
+    const vx = x[k], vy = y[k];
+    if (typeof vx === 'string' || typeof vy === 'string') {
+      return String(vx).localeCompare(String(vy)) * LSORT.d * -1;
+    }
+    /* null は常に下へ。向きに関わらず */
+    if (vx === null || vx === undefined) return 1;
+    if (vy === null || vy === undefined) return -1;
+    return (vx - vy) * LSORT.d;
+  });
+  return list;
+}
+
+function leagueBody(all) {
+  const list = leagueRows(all);
+  if (!list.length) return '<tr><td colspan="16" class="empty">該当なし</td></tr>';
+  const p3 = (v) => (v === null || v === undefined) ? '—'
+    : v.toFixed(3).replace(/^0/, '');
+  return list.map((p) => `<tr>
+    <td><a href="#/p/${p.id}">${esc(p.n)}</a></td>
+    <td><a class="tm${FAV.has(p.t) ? ' is-fav' : ''}"
+           href="#/team/${esc(p.t)}">${esc(p.t)}</a></td>
+    <td class="n">${p.g}</td>
+    <td class="n dim">${p.gs ?? '—'}</td>
+    <td class="n">${num(p.mpg)}</td>
+    <td class="n b">${num(p.pts)}</td>
+    <td class="n">${num(p.reb)}</td>
+    <td class="n">${num(p.ast)}</td>
+    <td class="n">${num(p.stl)}</td>
+    <td class="n">${num(p.blk)}</td>
+    <td class="n">${num(p.tov)}</td>
+    <td class="n">${p3(p.fg)}</td>
+    <td class="n">${p3(p.tp)}</td>
+    <td class="n">${p3(p.ft)}</td>
+    <td class="n">${p3(p.ts)}</td>
+    <td class="n ${p.pm > 0 ? 'up' : p.pm < 0 ? 'down' : ''}">${
+      p.pm > 0 ? '+' : ''}${num(p.pm)}</td>
+  </tr>`).join('');
+}
+
+async function renderLeague() {
+  const d = await load('season_players');
+  const all = d.players;
+  const head = () => LCOLS.map((c) => `<th class="${c.s === 0 ? '' : 'n'} ${
+    LSORT.k === c.k ? 'sorted' : ''}" data-k="${c.k}">${c.t}${
+    LSORT.k === c.k ? (LSORT.d < 0 ? ' ▾' : ' ▴') : ''}</th>`).join('');
+
+  view.innerHTML = `
+    <h1>選手（今季）</h1>
+    <p class="sub">${esc(d.season)} レギュラーシーズンの1試合平均。
+      ${all.length} 名。<strong>列の見出しを押すと並べ替え</strong>。
+      率は合計から計算している（試合ごとの率の平均ではない）。</p>
+    <div class="lbar">
+      <input id="lq" type="search" placeholder="名前・チームで絞る"
+             value="${esc(LQ)}" autocomplete="off">
+      <label>最低試合数
+        <input id="lmin" type="number" min="1" max="82" value="${LMIN}"></label>
+      <span class="spacer"></span>
+      <span class="count" id="lcount"></span>
+    </div>
+    <div class="wrap"><table class="career league">
+      <thead><tr id="lhead">${head()}</tr></thead>
+      <tbody id="lbody">${leagueBody(all)}</tbody>
+    </table></div>`;
+
+  const redraw = () => {
+    document.getElementById('lbody').innerHTML = leagueBody(all);
+    document.getElementById('lhead').innerHTML = head();
+    bindHead();
+    document.getElementById('lcount').textContent =
+      `${leagueRows(all).length} 名`;
+  };
+  const bindHead = () => {
+    document.getElementById('lhead').onclick = (e) => {
+      const th = e.target.closest('th[data-k]');
+      if (!th) return;
+      const k = th.dataset.k;
+      /* 同じ列をもう一度押したら向きを反転。別の列なら既定の向きから */
+      if (LSORT.k === k) LSORT.d *= -1;
+      else LSORT = { k, d: (k === 'n' || k === 't') ? 1 : -1 };
+      redraw();
+    };
+  };
+  bindHead();
+  document.getElementById('lcount').textContent = `${leagueRows(all).length} 名`;
+  document.getElementById('lq').oninput = (e) => { LQ = e.target.value; redraw(); };
+  document.getElementById('lmin').onchange = (e) => {
+    LMIN = Math.max(1, Number(e.target.value) || 1);
+    redraw();
+  };
+}
+
 /* ------------------------------------------------------------- チーム一覧 */
 
 async function renderTeams() {
@@ -321,6 +493,11 @@ async function renderTeams() {
 async function renderTeam(tri, tab) {
   const [teams, rost, sc] = await Promise.all(
     [load('teams'), load('rosters'), load('schedule')]);
+  /* 今季の成績。順位表と同じ JSON から引く（無くてもページは出す） */
+  let me = null;
+  try {
+    me = (await load('standings')).teams.find((t) => t.tri === tri) || null;
+  } catch (e) { me = null; }
   await results();   /* 日程表の「結果」列から試合ページへ飛ばすため */
   const team = teams.find((t) => t.tri === tri);
   if (!team) { view.innerHTML = `<p class="err">チーム ${esc(tri)} が無い。</p>`; return; }
@@ -335,6 +512,24 @@ async function renderTeam(tri, tab) {
       <span class="tri${FAV.has(tri) ? ' is-fav' : ''}">${esc(tri)}</span>
       <span class="sub" style="margin:0">${esc(team.conference)} / ${esc(team.division)}</span>
     </div>
+    ${me ? `<div class="statstrip">
+      <div><span class="k">今季</span><span class="v">${me.w}勝 ${me.l}敗</span>
+        <span class="k2">${me.pct.toFixed(3).replace(/^0/, '')}</span></div>
+      <div><span class="k">得点 / 失点</span>
+        <span class="v">${num(me.pf)} / ${num(me.pa)}</span>
+        <span class="k2 ${me.diff > 0 ? 'up' : 'down'}">${
+          me.diff > 0 ? '+' : ''}${num(me.diff)}</span></div>
+      <div><span class="k">ORtg / DRtg</span>
+        <span class="v">${num(me.ortg)} / ${num(me.drtg)}</span>
+        <span class="k2 ${me.net > 0 ? 'up' : 'down'}">Net ${
+          me.net > 0 ? '+' : ''}${num(me.net)}</span></div>
+      <div><span class="k">Pace</span><span class="v">${num(me.pace)}</span></div>
+      <div><span class="k">ホーム / アウェイ</span>
+        <span class="v">${me.hw}-${me.hl} / ${me.aw}-${me.al}</span></div>
+      <div><span class="k">直近10 / 連</span>
+        <span class="v">${me.w10}-${me.l10}</span>
+        <span class="k2 ${me.stk[0] === 'W' ? 'up' : 'down'}">${esc(me.stk)}</span></div>
+    </div>` : ''}
     <div class="tabs">
       <button data-t="roster"   class="${cur === 'roster' ? 'on' : ''}">
         ロスター（${players.length}）</button>
@@ -1592,17 +1787,24 @@ async function renderGame(gid) {
 
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
-  const nav = { schedule: 'on', teams: '', reports: '' };
+  const nav = { schedule: 'on', standings: '', teams: '', players: '',
+                reports: '' };
   try {
     view.innerHTML = '<p class="loading">読み込み中…</p>';
-    if (parts[0] === 'teams') {
+    if (parts[0] === 'standings') {
+      nav.schedule = ''; nav.standings = 'on';
+      await renderStandings();
+    } else if (parts[0] === 'players') {
+      nav.schedule = ''; nav.players = 'on';
+      await renderLeague();
+    } else if (parts[0] === 'teams') {
       nav.schedule = ''; nav.teams = 'on';
       await renderTeams();
     } else if (parts[0] === 'team' && parts[1]) {
       nav.schedule = ''; nav.teams = 'on';
       await renderTeam(parts[1].toUpperCase(), parts[2]);
     } else if (parts[0] === 'p' && parts[1]) {
-      nav.schedule = ''; nav.teams = 'on';
+      nav.schedule = ''; nav.players = 'on';
       await renderPlayer(parts[1]);
     } else if (parts[0] === 'game' && parts[1]) {
       await renderGame(parts[1]);
@@ -1627,6 +1829,83 @@ async function route() {
     a.className = nav[a.dataset.nav] || '';
   });
   window.scrollTo(0, 0);
+}
+
+/* ----------------------------------------------------------- 検索
+   選手 526 名とチーム 30 を名前で引く。新しい JSON は作らず、
+   既にある rosters.json と teams.json をそのまま使う。
+   ★ 初回フォーカスまで読みにいかない（日程だけ見る人に読ませない） */
+
+let FIND = null;
+
+/* ★ アクセントを落としてから比べる。落とさないと `jokic` で
+   「Nikola Jokić」が出ない（実際に出なかった）。NBA の名簿には
+   ć / č / ö / Á などが普通に入っている */
+const fold = (s) => String(s || '').normalize('NFD')
+  .replace(/[̀-ͯ]/g, '').toLowerCase();
+
+async function findIndex() {
+  if (FIND) return FIND;
+  const [teams, rost] = await Promise.all([load('teams'), load('rosters')]);
+  FIND = [];
+  for (const t of teams) {
+    FIND.push({ k: fold(`${t.tri} ${t.full_name}`),
+                h: `#/team/${t.tri}`, n: t.full_name, s: t.tri });
+  }
+  for (const [tri, ps] of Object.entries(rost.teams || {})) {
+    for (const p of ps) {
+      FIND.push({ k: fold(`${p.name} ${tri}`),
+                  h: `#/p/${p.id}`, n: p.name, s: tri });
+    }
+  }
+  return FIND;
+}
+
+function initFind() {
+  const box = document.getElementById('q');
+  const res = document.getElementById('qres');
+  if (!box || !res) return;
+  let hits = [];
+  const draw = () => {
+    if (!hits.length) { res.hidden = true; res.innerHTML = ''; return; }
+    res.innerHTML = hits.map((x, i) => `<a href="${x.h}" data-i="${i}">
+      <span>${esc(x.n)}</span><span class="dim">${esc(x.s)}</span></a>`).join('');
+    res.hidden = false;
+  };
+  const run = async () => {
+    const q = fold(box.value.trim());
+    if (q.length < 1) { hits = []; draw(); return; }
+    const ix = await findIndex();
+    hits = ix.filter((x) => x.k.includes(q)).slice(0, 12);
+    draw();
+  };
+  box.oninput = run;
+  box.onfocus = run;
+  box.onkeydown = (e) => {
+    if (e.key === 'Enter' && hits.length) {
+      go(hits[0].h); box.blur();
+    } else if (e.key === 'Escape') {
+      box.value = ''; hits = []; draw(); box.blur();
+    }
+  };
+  res.onclick = () => { box.value = ''; hits = []; draw(); };
+  /* 外を押したら閉じる。`blur` だとリンクを押す前に消える */
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.find')) { hits = []; draw(); }
+  });
+}
+
+/* データがいつ時点かをフッタに出す。記録として読むときに要る */
+async function showAsOf() {
+  const el = document.getElementById('asof');
+  if (!el) return;
+  try {
+    const m = await load('manifest');
+    const d = new Date(m.generated_at);
+    const p = (n) => String(n).padStart(2, '0');
+    el.textContent = `データは ${d.getFullYear()}-${p(d.getMonth() + 1)}-${
+      p(d.getDate())} ${p(d.getHours())}:${p(d.getMinutes())} 時点`;
+  } catch (e) { /* 出せなくても本体は動く */ }
 }
 
 /* 貼り付ける位置はサイトヘッダの下。
@@ -1655,5 +1934,8 @@ window.addEventListener('resize', () => {
     if (location.hash.startsWith('#/p/')) route();
   }, 200);
 });
+
+initFind();
+showAsOf();
 
 route();

@@ -54,6 +54,20 @@ def clean(v):
     return v
 
 
+def r1(v, dig=1):
+    """None と NaN を潰して丸める（build_players.py と同じ）。"""
+    if v is None or v != v:
+        return None
+    return round(float(v), dig)
+
+
+def pct(made, att, dig=3):
+    """率は平均の平均ではなく**合計から出す**。"""
+    if not att or att != att:
+        return None
+    return round(made / att, dig)
+
+
 def has_table(con, name: str) -> bool:
     """その表が DB にあるか。
 
@@ -150,6 +164,148 @@ def main() -> None:
         "season": SEASON,
         "games": s.to_dict("records"),
     })
+
+    # ------------------------------------------------------- standings
+    # ★ `team_standings_daily` は使わない。`build_team_dim.py` が作る派生表で、
+    #   進行中の季には追いついていない（2026-11-01 時点で 2025-26 止まり）。
+    #   `team_game_adv` と `player_game_base` から直に作る。
+    # ★ Advanced には PTS が無いので、得点はボックスの合計から取る。
+    if has_table(con, "team_game_adv") and has_table(con, "player_game_base"):
+        tg = con.execute(q(f"""
+            with pts as (
+              select game_id, team_abbreviation as tri, sum(pts) as pts
+              from player_game_base
+              where season_year = '{SEASON}' and season_type = 'Regular Season'
+              group by 1, 2)
+            select a.team_abbreviation as tri,
+                   substr(a.game_date, 1, 10) as d,
+                   a.wl,
+                   case when position('vs.' in a.matchup) > 0 then 1 else 0 end as home,
+                   a.off_rating, a.def_rating, a.pace, a.poss,
+                   me.pts as pf, op.pts as pa
+            from team_game_adv a
+            join pts me on me.game_id = a.game_id
+                       and me.tri = a.team_abbreviation
+            join pts op on op.game_id = a.game_id
+                       and op.tri <> a.team_abbreviation
+            where a.season_year = '{SEASON}'
+              and a.season_type = 'Regular Season'
+            order by a.team_abbreviation, a.game_date
+        """)).df()
+        dim = con.execute(q("""
+            select tri, full_name, conference, division from team_dim
+        """)).df().set_index("tri").to_dict("index")
+
+        rows = []
+        for tri, grp in tg.groupby("tri", sort=False):
+            r = grp.to_dict("records")
+            w = sum(1 for x in r if x["wl"] == "W")
+            last10 = r[-10:]
+            # 連勝 / 連敗は末尾から同じ結果が続く数
+            k = 0
+            for x in reversed(r):
+                if x["wl"] != r[-1]["wl"]:
+                    break
+                k += 1
+            poss = sum(x["poss"] for x in r) or 1
+            d = dim.get(tri, {})
+            rows.append({
+                "tri": tri,
+                "name": d.get("full_name", tri),
+                "conf": d.get("conference"), "div": d.get("division"),
+                "g": len(r), "w": w, "l": len(r) - w,
+                "pct": round(w / len(r), 3),
+                "hw": sum(1 for x in r if x["home"] and x["wl"] == "W"),
+                "hl": sum(1 for x in r if x["home"] and x["wl"] == "L"),
+                "aw": sum(1 for x in r if not x["home"] and x["wl"] == "W"),
+                "al": sum(1 for x in r if not x["home"] and x["wl"] == "L"),
+                "w10": sum(1 for x in last10 if x["wl"] == "W"),
+                "l10": sum(1 for x in last10 if x["wl"] == "L"),
+                "stk": ("W" if r[-1]["wl"] == "W" else "L") + str(k),
+                "pf": r1(sum(x["pf"] for x in r) / len(r)),
+                "pa": r1(sum(x["pa"] for x in r) / len(r)),
+                # ★ レーティングはポゼッションで重み付けする。
+                #   試合ごとの率の単純平均ではない（ペースが違うとずれる）
+                "ortg": r1(sum(x["off_rating"] * x["poss"] for x in r) / poss, 1),
+                "drtg": r1(sum(x["def_rating"] * x["poss"] for x in r) / poss, 1),
+                "pace": r1(sum(x["pace"] for x in r) / len(r), 1),
+            })
+        for x in rows:
+            x["diff"] = r1(x["pf"] - x["pa"])
+            x["net"] = r1(x["ortg"] - x["drtg"])
+        # ゲーム差はカンファレンス内の首位から
+        for conf in {x["conf"] for x in rows}:
+            side = [x for x in rows if x["conf"] == conf]
+            top = max(side, key=lambda x: (x["pct"], x["w"]))
+            for x in side:
+                x["gb"] = r1(((top["w"] - x["w"]) + (x["l"] - top["l"])) / 2)
+        rows.sort(key=lambda x: (x["conf"] or "", -x["pct"], -x["w"]))
+        tot += write(a.out, "standings.json", {
+            "season": SEASON,
+            "asof": max(tg["d"]) if len(tg) else None,
+            "teams": rows,
+        })
+    else:
+        tot += keep(a.out, "standings.json")
+
+    # --------------------------------------------------- 今季の選手一覧
+    # 並べ替えできる 1 枚の表にする。選手ページの JSON は 1 人 1 ファイルで、
+    # 「今季の得点上位」を見るには全部開くしかなかった。
+    # ★ 先発は `player_track.position`。`panel_start` は進行中の季に
+    #   追いついていない（build_players.py と同じ理由）。
+    if has_table(con, "player_game_base") and has_table(con, "player_track"):
+        pl = con.execute(q(f"""
+            select b.player_id as id,
+                   any_value(b.player_name) as n,
+                   arg_max(b.team_abbreviation, b.game_date) as t,
+                   count(*) as g,
+                   sum(st.started) as gs,
+                   sum(split_part(b.min_sec,':',1)::double
+                       + split_part(b.min_sec,':',2)::double/60) as mp,
+                   sum(b.pts) as pts, sum(b.reb) as reb, sum(b.ast) as ast,
+                   sum(b.stl) as stl, sum(b.blk) as blk, sum(b.tov) as tov,
+                   sum(b.fgm) as fgm, sum(b.fga) as fga,
+                   sum(b.fg3m) as tpm, sum(b.fg3a) as tpa,
+                   sum(b.ftm) as ftm, sum(b.fta) as fta,
+                   sum(b.plus_minus) as pm
+            from player_game_base b
+            left join (
+                select game_id, person_id as player_id,
+                       case when coalesce(trim(position), '') <> ''
+                            then 1 else 0 end as started
+                from player_track where person_id is not null) st
+              using (game_id, player_id)
+            where b.season_year = '{SEASON}'
+              and b.season_type = 'Regular Season'
+              and b.min is not null
+            group by b.player_id
+        """)).df()
+
+        def per(x, k):
+            return r1(x[k] / x["g"])
+
+        plist = []
+        for x in pl.to_dict("records"):
+            plist.append({
+                "id": int(x["id"]), "n": x["n"], "t": x["t"],
+                "g": int(x["g"]),
+                "gs": None if x["gs"] != x["gs"] else int(x["gs"]),
+                "mpg": r1(x["mp"] / x["g"]),
+                "pts": per(x, "pts"), "reb": per(x, "reb"),
+                "ast": per(x, "ast"), "stl": per(x, "stl"),
+                "blk": per(x, "blk"), "tov": per(x, "tov"),
+                "fg": pct(x["fgm"], x["fga"]),
+                "tp": pct(x["tpm"], x["tpa"]),
+                "ft": pct(x["ftm"], x["fta"]),
+                "ts": pct(x["pts"], 2 * (x["fga"] + 0.44 * x["fta"])),
+                "pm": r1(x["pm"] / x["g"]),
+            })
+        plist.sort(key=lambda z: -(z["pts"] or 0))
+        tot += write(a.out, "season_players.json", {
+            "season": SEASON, "players": plist,
+        })
+    else:
+        tot += keep(a.out, "season_players.json")
 
     # ---------------------------------------------------------- rosters
     # 起用ブレ指数。ロスター表にも 1季版（DDI_25）を出す。
