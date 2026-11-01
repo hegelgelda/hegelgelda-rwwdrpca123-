@@ -17,6 +17,29 @@ const DATA = './public/data1';
 const DATA_V = 'd1c2af52';
 const view = document.getElementById('view');
 
+/* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scriptsook_viz が毎時作って上げる） ----
+   一覧 index.json の id は `日付(ET)_AWAY-HOME`（チームの略号はこのサイトと同じ）。
+   ★ 読めなくても日程は出す。一覧が無い・Cloudflare が止まっているときはリンクを出さないだけ */
+const BOOKS_URL = 'https://hegelgelda-nba-books.pages.dev';
+let BOOKS = null;
+async function books() {
+  if (BOOKS) return BOOKS;
+  try {
+    const res = await fetch(`${BOOKS_URL}/index.json`, { cache: 'no-cache' });
+    if (!res.ok) throw new Error(res.status);
+    const ix = await res.json();
+    BOOKS = Object.fromEntries((ix.games || []).map((b) => [`${b.d}_${b.a}-${b.h}`, b]));
+  } catch (e) {
+    BOOKS = {};
+  }
+  return BOOKS;
+}
+const bookLink = (d, a, h) => {
+  const b = (BOOKS || {})[`${d}_${a}-${h}`];
+  return b ? `<a class="booklink" href="${BOOKS_URL}/v.html#${encodeURIComponent(b.id)}"
+      target="_blank" rel="noopener" title="moneyline の確率の推移と、任意の時点の板">板</a>` : '';
+};
+
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
 const cache = {};
 async function load(name) {
@@ -138,6 +161,7 @@ async function renderSchedule(dateArg) {
   const sc = await load('schedule');
   await results();
   await model();
+  await books();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -199,6 +223,7 @@ async function renderWeek(dateArg) {
   const sc = await load('schedule');
   await results();
   await model();
+  await books();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -313,6 +338,7 @@ function gameRow(g) {
       ${match}
       ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}
       ${mpred}
+      ${bookLink(g.d, g.a, g.h)}
     </div>
     <div class="meta">
       ${g.tv ? `<span class="tv">${esc(g.tv)}</span> · ` : ''}
@@ -2160,6 +2186,7 @@ function oddsPane(g, key) {
 }
 
 async function renderGame(gid) {
+  await books();
   let g;
   try {
     g = await load(`games/${gid}`);
@@ -2184,7 +2211,8 @@ async function renderGame(gid) {
   }
 
   view.innerHTML = `
-    <p class="sub"><a href="#/d/${esc(g.date)}">&larr; ${fmtDate(g.date)}の日程</a></p>
+    <p class="sub"><a href="#/d/${esc(g.date)}">&larr; ${fmtDate(g.date)}の日程</a>
+      ${bookLink(g.date, g.away, g.home)}</p>
 
     <div class="gamehead${favCls(g.away, g.home)}">
       <div class="side">

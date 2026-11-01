@@ -840,3 +840,11 @@ table.tstat .rk {
 table.tstat .rk.up { color: var(--accent); }
 table.tstat .rk.down { color: var(--warn); }
 table.career tr.nowrow td { background: var(--panel); font-weight: 600; }
+
+/* 板と odds の図へのリンク（Cloudflare Pages。一覧に載った試合だけ出る） */
+a.booklink {
+  display: inline-block; font-size: 11px; font-weight: 600; padding: 1px 8px;
+  border-radius: 999px; border: 1px solid var(--accent); color: var(--accent);
+  margin-left: 8px; vertical-align: 1px;
+}
+a.booklink:hover { background: var(--accent-soft); text-decoration: none; }
