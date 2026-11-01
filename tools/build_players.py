@@ -93,6 +93,10 @@ def main() -> None:
     print(f"対象 {len(ids):,} 名 → {pdir}\n")
 
     # シーズン × 種別で集計。出場した試合だけ（min is not null）。
+    # ★ `select distinct` を外さないこと。`player_track` には**同じ行が
+    #   複数入りうる**（`fetch_tracking.py` は delete せず insert するだけで、
+    #   `_fetch_log` が唯一の重複よけ）。2026-11-01 に 3 試合が 3 重になり、
+    #   試合ログが 1,597 -> 1,729 行に水増しされた。
     # ★ 先発は `player_track.position`（先発枠のラベル）から直に取る。
     #   `panel_start` は `build_player_panel.py` が作る派生表で、同じ式だが
     #   **進行中の季には追いついていない**（2026-27 は 0 行で、2026-10-31 時点で
@@ -121,7 +125,7 @@ def main() -> None:
                sum(plus_minus) as pm
         from player_game_base b
         left join (
-            select game_id, person_id as player_id,
+            select distinct game_id, person_id as player_id,
                    case when coalesce(trim(position), '') <> '' then 1 else 0 end
                      as started
             from player_track where person_id is not null) st
@@ -214,7 +218,7 @@ def main() -> None:
                me.pts as tpts, op.pts as opts, op.tri as opp
         from player_game_base b
         left join (
-            select game_id, person_id as player_id,
+            select distinct game_id, person_id as player_id,
                    case when coalesce(trim(position), '') <> '' then 1 else 0 end
                      as started
             from player_track where person_id is not null) st

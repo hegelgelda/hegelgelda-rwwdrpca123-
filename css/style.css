@@ -771,3 +771,29 @@ header.site .find input:focus { outline: none; border-color: var(--accent);
 
 /* 市場の事後検証。2 SE を超えた欄に印を付けるだけ（結論ではない） */
 td.warnv { color: var(--warn); font-weight: 700; }
+
+/* コメント記録の一覧 */
+table.notetab td.nc2 { white-space: pre-wrap; font-size: 13px; }
+table.notetab td { vertical-align: top; }
+.lbar button {
+  font: inherit; font-size: 13px; cursor: pointer;
+  background: var(--panel); color: var(--ink);
+  border: 1px solid var(--line); border-radius: 999px; padding: 6px 16px;
+}
+.lbar button:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.lbar button:disabled { color: var(--muted); cursor: default; }
+
+/* 試合ページの「公開済み」の記録 */
+.pubnote { border-left: 2px solid var(--accent); padding: 2px 0 2px 10px;
+           margin-bottom: 8px; }
+.pubnote .nt { font-family: var(--mono); font-size: 11px; color: var(--muted); }
+.pubnote .pub { font-size: 11px; color: var(--accent); margin-left: 6px; }
+.pubnote .nc { white-space: pre-wrap; font-size: 13px; margin-top: 3px; }
+
+/* 選手ページの injury 履歴 */
+table.injlog { white-space: nowrap; }
+table.injlog td { vertical-align: top; }
+table.injlog td.rsn2 { white-space: normal; font-size: 12px; max-width: 320px; }
+table.injlog .hb { display: block; font-size: 11px; color: var(--muted);
+                   font-family: var(--mono); margin-top: 2px; }
+.pubwrap { margin-bottom: 10px; }

@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'bc0787d9';
+const DATA_V = '2863f465';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -287,6 +287,116 @@ function gameRow(g) {
       ${esc(g.city || '')}
     </div>
   </div>`;
+}
+
+/* ---- コメント記録の一覧と出し入れ ----------------------------------
+   ★ 保存先は localStorage なので、**その端末のそのブラウザにしか残らない**。
+     別の端末から見たい / 消えても困らないようにしたいなら、ここで
+     書き出して `C:\nba\reports\game_notes.json` に置く。次の日次ビルドで
+     `build_games.py` が試合ページに焼き込み、誰でも見られるようになる。
+   ★ 書き出しの形は `build_games.py` が読む形と**同じ**。往復できる。 */
+
+const NOTE_PREFIX = 'nba.note.';
+
+function notesAll() {
+  const out = [];
+  let keys = [];
+  try { keys = Object.keys(localStorage); } catch (e) { keys = []; }
+  for (const k of keys) {
+    if (!k.startsWith(NOTE_PREFIX)) continue;
+    const gid = k.slice(NOTE_PREFIX.length);
+    for (const n of notesLoad(gid)) out.push({ gid, ...n });
+  }
+  out.sort((x, y) => String(y.t).localeCompare(String(x.t)));
+  return out;
+}
+
+function notesExport() {
+  const notes = {};
+  for (const n of notesAll()) (notes[n.gid] ??= []).push({ t: n.t, c: n.c });
+  const blob = new Blob(
+    [JSON.stringify({ generated_at: new Date().toISOString(), notes }, null, 1)],
+    { type: 'application/json' });
+  const u = URL.createObjectURL(blob);
+  const a2 = document.createElement('a');
+  a2.href = u;
+  a2.download = 'game_notes.json';
+  a2.click();
+  setTimeout(() => URL.revokeObjectURL(u), 1000);
+}
+
+/* 読み込みは**併合**。同じ試合の同じ時刻の記録は 1 つに畳む */
+function notesImport(obj) {
+  const src = (obj && obj.notes) || {};
+  let add = 0;
+  for (const [gid, list] of Object.entries(src)) {
+    if (!Array.isArray(list)) continue;
+    const cur = notesLoad(gid);
+    const seen = new Set(cur.map((n) => `${n.t}|${n.c}`));
+    for (const n of list) {
+      if (!n || !n.c || seen.has(`${n.t}|${n.c}`)) continue;
+      cur.push({ t: n.t || new Date().toISOString(), c: String(n.c) });
+      add += 1;
+    }
+    cur.sort((x, y) => String(y.t).localeCompare(String(x.t)));
+    notesSave(gid, cur);
+  }
+  return add;
+}
+
+/* ★ 下の `<code>` の中は `\` で書く。テンプレート文字列なので `
+` と
+   `` はそのままだと改行と復帰になり「C: ba eports...」と出る。
+   ★ ここに HTML コメントで説明を書かないこと。コメントの中にバッククォートを
+   入れるとテンプレート文字列がそこで閉じて、ページ全体が落ちる（実際に落ちた）。 */
+async function renderNotes() {
+  await results();
+  const list = notesAll();
+  const row = (n) => {
+    const g = (RESULTS || {})[n.gid];
+    const label = g ? `${g.a} @ ${g.h}` : n.gid;
+    return `<tr>
+      <td class="n dim">${esc(noteStamp(n.t))}</td>
+      <td><a href="#/game/${esc(n.gid)}">${esc(label)}</a>
+        ${g ? `<span class="dim"> ${esc(g.d)}</span>` : ''}</td>
+      <td class="nc2">${esc(n.c)}</td>
+    </tr>`;
+  };
+  view.innerHTML = `
+    <h1>コメント記録</h1>
+    <p class="sub">試合ページで書いた記録の一覧。
+      <strong>保存先はこの端末のこのブラウザ</strong>（localStorage）なので、
+      別の端末からは見えないし、閲覧データを消すと消える。</p>
+    <div class="lbar">
+      <button id="nexp" ${list.length ? '' : 'disabled'}>書き出す（JSON）</button>
+      <button id="nimp">読み込む</button>
+      <input id="nfile" type="file" accept="application/json" hidden>
+      <span class="spacer"></span>
+      <span class="count">${list.length} 件</span>
+    </div>
+    ${list.length ? `<div class="wrap"><table class="career notetab">
+      <thead><tr><th class="n">記録した日時</th><th>試合</th><th>本文</th></tr></thead>
+      <tbody>${list.map(row).join('')}</tbody>
+    </table></div>` : '<p class="empty">まだ記録が無い。</p>'}
+    <p class="sub">書き出した JSON を <code>C:\\nba\\reports\\game_notes.json</code>
+      に置くと、次の日次ビルドで試合ページに焼き込まれ、
+      <strong>どの端末からでも見られる</strong>ようになる。
+      読み込みは併合で、同じ内容は重複しない。</p>`;
+
+  document.getElementById('nexp').onclick = notesExport;
+  const f = document.getElementById('nfile');
+  document.getElementById('nimp').onclick = () => f.click();
+  f.onchange = async () => {
+    const file = f.files && f.files[0];
+    if (!file) return;
+    try {
+      const n = notesImport(JSON.parse(await file.text()));
+      alert(`${n} 件を読み込んだ。`);
+      route();
+    } catch (e) {
+      alert(`読み込めなかった: ${e.message}`);
+    }
+  };
 }
 
 /* ------------------------------------------------------- 市場の事後検証
@@ -885,6 +995,7 @@ async function renderPlayer(id) {
     ${car ? careerTable(car)
       : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}
     ${car ? gameLog(car) : ''}
+    ${car ? injTable(car) : ''}
     ${car ? distBlock(car) : ''}
     ${car ? modelBlock(car) : ''}`;
 
@@ -1025,6 +1136,49 @@ function gameLog(car) {
       入らない。<strong>対戦と結果</strong>を押すとその試合のページへ飛ぶ。${
       EXCLUDE_NOTE.length ? `灰色の行は個別ページを作っていない試合
       （${EXCLUDE_NOTE.join(' / ')} が絡む試合）。` : ''}</p>`;
+}
+
+/* ------------------------------------------- 今季の injury report（選手別）
+   ★ 「載った」と「欠場した」は別物。Questionable で載って出場した試合も
+     ここに出る。出場したかどうかは試合ログの有無で判る。
+   ★ ティップより後の版は VPS 側で切ってある（`slot_ts_utc <= tip_utc`）。 */
+
+function injTable(car) {
+  const list = car.inj || [];
+  if (!list.length) return '';
+  const played = new Set((car.log || []).map((r) => r.g));
+  const n = {};
+  for (const r of list) n[r.first] = (n[r.first] || 0) + 1;
+  const sum = STATUS_ORDER.filter((k) => n[k]).map((k) => `${k} ${n[k]}`).join(' / ');
+  const rows = list.map((r) => `<tr>
+    <td class="n">${esc((r.d || '').slice(5).replace('-', '/'))}</td>
+    <td>${(RESULTS || {})[r.g]
+      ? `<a href="#/game/${esc(r.g)}">${r.h ? 'vs' : '@'} ${esc(r.o || '')}</a>`
+      : `<span class="dim">${r.h ? 'vs' : '@'} ${esc(r.o || '')}</span>`}</td>
+    <td>${stTag(r.first)}<span class="hb">${beforeTip(r.fh)}</span></td>
+    <td>${(r.final && r.final !== r.first) ? stTag(r.final)
+      : '<span class="dim">変化なし</span>'}<span class="hb">${
+      beforeTip(r.lh)}</span></td>
+    <td class="n">${!(RESULTS || {})[r.g]
+      ? '<span class="dim">結果待ち</span>'
+      : played.has(r.g)
+        ? '<span class="wl w">○</span>出場'
+        : '<span class="wl l">●</span>欠場'}</td>
+    <td class="dim rsn2">${esc(r.reason || '')}</td>
+  </tr>`).join('');
+  return `<h2>今季の injury report</h2>
+    <p class="sub">${list.length} 試合で名前が載った（初出の時点で ${
+      esc(sum || '記載なし')}）。
+      <strong>載った＝欠場ではない</strong>。Questionable から出場した試合も入る。
+      ★ ボックススコアがまだ入っていない試合は<strong>「結果待ち」</strong>。
+      欠場と区別している（injury は VPS が 15 分ごと、結果は 1 日 1 回なので
+      injury のほうが先に入る）。</p>
+    <div class="wrap"><table class="career injlog">
+      <thead><tr><th class="n">日付</th><th>対戦</th><th>初出</th><th>最終</th>
+        <th class="n">結果</th><th>理由</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p class="sub">時刻は試合の何時間前か。ティップより後の版は除いてある。</p>`;
 }
 
 /* --------------------------------------------------- 出場時間の分布 */
@@ -1857,6 +2011,12 @@ async function renderGame(gid) {
       <section class="pane note">
         <h2>コメント記録</h2>
         <div class="notebox"><div class="noteinner">
+          ${(g.pnotes || []).length ? `<div class="pubwrap">
+            ${g.pnotes.map((n) => `<div class="pubnote">
+              <span class="nt">${esc(noteStamp(n.t))}</span><span class="pub"
+                >公開済み</span>
+              <div class="nc">${esc(n.c)}</div></div>`).join('')}
+          </div>` : ''}
           <div class="notelist" id="notelist"></div>
           <form id="noteform">
             <textarea id="notetext" rows="2"
@@ -1974,10 +2134,13 @@ async function renderGame(gid) {
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const nav = { schedule: 'on', standings: '', teams: '', players: '',
-                market: '', reports: '' };
+                market: '', notes: '', reports: '' };
   try {
     view.innerHTML = '<p class="loading">読み込み中…</p>';
-    if (parts[0] === 'market') {
+    if (parts[0] === 'notes') {
+      nav.schedule = ''; nav.notes = 'on';
+      await renderNotes();
+    } else if (parts[0] === 'market') {
       nav.schedule = ''; nav.market = 'on';
       await renderMarket();
     } else if (parts[0] === 'standings') {

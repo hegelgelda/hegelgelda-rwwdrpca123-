@@ -253,6 +253,9 @@ def main() -> None:
     # 「今季の得点上位」を見るには全部開くしかなかった。
     # ★ 先発は `player_track.position`。`panel_start` は進行中の季に
     #   追いついていない（build_players.py と同じ理由）。
+    # ★ `select distinct` を外さないこと。`player_track` には**同じ行が
+    #   複数入りうる**（`fetch_tracking.py` は delete せず insert するだけ）。
+    #   2026-11-01 に 3 試合が 3 重になり、試合数も合計も水増しされた。
     if has_table(con, "player_game_base") and has_table(con, "player_track"):
         pl = con.execute(q(f"""
             select b.player_id as id,
@@ -270,7 +273,7 @@ def main() -> None:
                    sum(b.plus_minus) as pm
             from player_game_base b
             left join (
-                select game_id, person_id as player_id,
+                select distinct game_id, person_id as player_id,
                        case when coalesce(trim(position), '') <> ''
                             then 1 else 0 end as started
                 from player_track where person_id is not null) st

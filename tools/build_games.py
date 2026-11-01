@@ -97,12 +97,18 @@ VIZ_PNG = Path(os.environ.get("NBA_VIZ_PNG")
 VIZ_ALIAS = {"NY": "NYK", "SA": "SAS", "GS": "GSW", "WSH": "WAS",
              "NO": "NOP", "UTAH": "UTA", "BRK": "BKN", "PHO": "PHX"}
 VIZ_INDEX: dict = {}      # (UTC日付, away, home) -> PNG のパス。main で作る
+NOTES: dict = {}          # game_id -> [{t, c}]。main で読む
 
 # VPS から取ってくる中間ファイル（injury とオッズ）
 HOST = os.environ.get("NBA_LIVE_HOST", "root@155.138.226.166")
 INJ_REMOTE = "/opt/nba/reports/injury_games.json"
 INJ_LOCAL = Path(r"C:\nba\reports\injury_games.json")
 ODDS_REMOTE = "/opt/nba/reports/odds_games.json"
+# 試合ごとのコメント記録。サイトの `#/記録` で書き出した JSON をここに置くと
+# 試合ページに焼き込まれ、**どの端末からでも読める**ようになる。
+# ★ 無くても構わない（ブラウザの localStorage にある記録はそのまま出る）。
+NOTES_LOCAL = Path(os.environ.get("NBA_GAME_NOTES")
+                   or r"C:\nba\reports\game_notes.json")
 ODDS_LOCAL = Path(r"C:\nba\reports\odds_games.json")
 _SYS = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "OpenSSH"
 SSH = str(_SYS / "ssh.exe") if (_SYS / "ssh.exe").exists() else "ssh"
@@ -524,6 +530,7 @@ def build_one(con, gid, gdate, tip, home, away, arena, city, inj, odds):
         "check": check, "stint_ok": stint_ok, "stint_src": stint_src,
         "box": box, "qbox": qbox, "stints": stints, "score_path": path,
         "viz": viz_make(gid, tip_utc, away, home, False),
+        "pnotes": NOTES.get(gid) or None,
         "inactive": inactive, "injury": injury,
         "odds": od.get("series") or {}, "odds_close": od.get("close") or {},
     }
@@ -543,8 +550,18 @@ def main() -> None:
     exclude = {TRI_ALIAS.get(x.strip().upper(), x.strip().upper())
                for x in (a.exclude or "").split(",") if x.strip()}
 
-    global VIZ_INDEX
+    global VIZ_INDEX, NOTES
     VIZ_INDEX = viz_index()
+    NOTES = {}
+    if NOTES_LOCAL.exists():
+        try:
+            with open(NOTES_LOCAL, encoding="utf-8") as f:
+                NOTES = json.load(f).get("notes") or {}
+            print("  記録: %d 試合 / %d 件 <- %s"
+                  % (len(NOTES), sum(len(v) for v in NOTES.values()),
+                     NOTES_LOCAL.name))
+        except Exception as e:
+            print("  [warn] %s を読めない: %s" % (NOTES_LOCAL.name, str(e)[:80]))
 
     inj = {} if a.no_injury else pull("export_injury_games.py", INJ_REMOTE, INJ_LOCAL)
     odds = {} if a.no_injury else pull("export_odds_games.py", ODDS_REMOTE, ODDS_LOCAL)
