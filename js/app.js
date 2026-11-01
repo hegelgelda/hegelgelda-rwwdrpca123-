@@ -1861,8 +1861,14 @@ const stTag = (v) => v
   ? `<span class="st ${STATUS_CLS[v] || ''}">${esc(v)}</span>`
   : '<span class="dim">—</span>';
 
-const mmss = (sec) => (sec === null || sec === undefined) ? '—'
-  : `${Math.floor(sec / 60)}:${String(Math.round(sec % 60)).padStart(2, '0')}`;
+/* ★ **先に秒を丸めてから割ること。** 分と秒を別々に丸めると、
+   1139.6 秒が floor(18) と round(59.6)=60 で **`18:60`** になる
+   （2026-11-02 に本番で出た）。 */
+const mmss = (sec) => {
+  if (sec === null || sec === undefined) return '—';
+  const s = Math.round(sec);
+  return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+};
 
 /* クォーター別得点。
    ★ 出どころを混ぜている。Q1-4 は公式の line_score、延長は PBP 集計しか無い。
