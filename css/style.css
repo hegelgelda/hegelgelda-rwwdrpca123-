@@ -668,3 +668,8 @@ table.loggame td.b { color: var(--ink); font-weight: 700; }
 table.loggame td.up { color: var(--accent); }
 table.loggame td.down { color: var(--warn); }
 table.loggame .wl { margin-right: 4px; }
+
+/* 「今季の試合」の対戦と結果は、どちらも試合ページへの入口 */
+table.loggame a.res { font-weight: 600; }
+table.loggame a.res:hover { text-decoration: underline; }
+table.loggame .nolink { cursor: default; }

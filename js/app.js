@@ -48,6 +48,10 @@ async function results() {
    片方だけなら `fav`（琥珀）、注目チーム同士なら `fav2`（紫）。
    増やす / 減らすのはここだけ。CSS 側は --fav / --fav2 */
 const FAV = new Set(['DET', 'NYK', 'OKC', 'SAS', 'DEN']);
+/* ★ 個別ページを作っていないチーム。**表示のためだけ**の写しで、
+   本当の判定は索引の `p: 0`（tools/build_games.py の EXCLUDE_TRI）。
+   両方を直すこと */
+const EXCLUDE_NOTE = ['CHI', 'BKN', 'NOP', 'SAC', 'UTA', 'MIL'];
 const favCls = (a, h) => {
   const n = (FAV.has(a) ? 1 : 0) + (FAV.has(h) ? 1 : 0);
   return n === 2 ? ' fav2' : n ? ' fav' : '';
@@ -594,14 +598,19 @@ function gameLog(car) {
   const rows = log.map((r) => {
     const res = (RESULTS || {})[r.g];
     const vs = `${r.h ? 'vs' : '@'} ${esc(r.o)}`;
+    const sc = `<span class="wl ${r.w ? 'w' : 'l'}">${r.w ? '○' : '●'}</span
+      >${esc(r.sc)}`;
+    /* ★ 対戦と結果の**両方**を試合ページへの入口にする。チームページの
+       日程表は「結果」列が入口なので、そろえておかないと迷う。
+       個別ページを作っていない試合（EXCLUDE_TRI）はリンクにしない */
+    const to = (inner) => (res && res.p !== 0)
+      ? `<a class="res" href="#/game/${esc(r.g)}">${inner}</a>`
+      : `<span class="dim nolink" title="この試合は個別ページを作っていない"
+           >${inner}</span>`;
     return `<tr>
       <td class="n">${esc(r.d.slice(5).replace('-', '/'))}</td>
-      <td>${res && res.p !== 0
-        ? `<a href="#/game/${esc(r.g)}">${vs}</a>`
-        : `<span class="dim" title="この試合は個別ページを作っていない"
-             >${vs}</span>`}</td>
-      <td class="n"><span class="wl ${r.w ? 'w' : 'l'}">${r.w ? '○' : '●'}</span
-        >${esc(r.sc)}</td>
+      <td>${to(vs)}</td>
+      <td class="n">${to(sc)}</td>
       <td class="n">${r.s === 1 ? '先発'
         : r.s === 0 ? '<span class="dim">—</span>'
           : '<span class="dim" title="トラッキングがまだ来ていない">?</span>'}</td>
@@ -632,7 +641,9 @@ function gameLog(car) {
       <tbody>${rows}</tbody>
     </table></div>
     <p class="sub">新しい順。<strong>出場した試合だけ</strong>で、DNP と欠場は
-      入らない。対戦を押すとその試合のページへ飛ぶ。</p>`;
+      入らない。<strong>対戦と結果</strong>を押すとその試合のページへ飛ぶ。
+      灰色の行は個別ページを作っていない試合
+      （${[...EXCLUDE_NOTE].join(' / ')} が絡む試合）。</p>`;
 }
 
 /* --------------------------------------------------- 出場時間の分布 */
