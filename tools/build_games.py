@@ -76,12 +76,13 @@ PBP_DB = Path(os.environ.get("NBA_PBP_DUCKDB") or r"C:\nba\nba_pbp.duckdb")
 OUT = REPO / "public" / "data1"
 SEASON = "2026-27"
 
-# ★ 容量を抑えるため、この 6 チームが絡む試合は**個別ページを作らない**
-#   （2026-10-30 に指定）。今季の実測で 71 試合中 26 試合（37%）が該当し、
-#   季を通すと約 32 MB -> 20 MB になる。
-#   日程の一覧には最終スコアだけ残す（索引は 1 試合 70 バイト程度で効かない）。
+# 個別ページを作らないチーム。**2026-11-01 に空にした**（全試合ぶん作る）。
+# ★ 経緯: 2026-10-30 に容量のため CHI / BKN / NOP / SAC / UTA / MIL を外したが、
+#   測り直したら全 1,206 試合でも生 32 MB / 配信 6 MB で上限 1 GB の 3% だった。
+#   一方で選手ページの試合ログの 36% がリンクにならず、実害の方が大きかった。
+#   また外したくなったら `--exclude CHI,BKN` のように渡すか、ここに書く。
 #   `BRK` は Basketball-Reference 式の略号。こちらの tricode は `BKN`。
-EXCLUDE_TRI = {"CHI", "BKN", "NOP", "SAC", "UTA", "MIL"}
+EXCLUDE_TRI: set[str] = set()
 TRI_ALIAS = {"BRK": "BKN", "PHO": "PHX", "GS": "GSW", "NO": "NOP", "NY": "NYK"}
 
 # polymarket の板グラフ（別プロジェクト）。PNG を WebP に直して持ってくる。

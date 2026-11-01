@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '4e4007f9';
+const DATA_V = 'a8339e1d';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -48,10 +48,10 @@ async function results() {
    片方だけなら `fav`（琥珀）、注目チーム同士なら `fav2`（紫）。
    増やす / 減らすのはここだけ。CSS 側は --fav / --fav2 */
 const FAV = new Set(['DET', 'NYK', 'OKC', 'SAS', 'DEN']);
-/* ★ 個別ページを作っていないチーム。**表示のためだけ**の写しで、
+/* ★ 個別ページを作っていないチーム。**注記を出すためだけ**の写しで、
    本当の判定は索引の `p: 0`（tools/build_games.py の EXCLUDE_TRI）。
-   両方を直すこと */
-const EXCLUDE_NOTE = ['CHI', 'BKN', 'NOP', 'SAC', 'UTA', 'MIL'];
+   2026-11-01 に除外をやめたので空。また外すなら両方を直すこと */
+const EXCLUDE_NOTE = [];
 const favCls = (a, h) => {
   const n = (FAV.has(a) ? 1 : 0) + (FAV.has(h) ? 1 : 0);
   return n === 2 ? ' fav2' : n ? ' fav' : '';
@@ -641,9 +641,9 @@ function gameLog(car) {
       <tbody>${rows}</tbody>
     </table></div>
     <p class="sub">新しい順。<strong>出場した試合だけ</strong>で、DNP と欠場は
-      入らない。<strong>対戦と結果</strong>を押すとその試合のページへ飛ぶ。
-      灰色の行は個別ページを作っていない試合
-      （${[...EXCLUDE_NOTE].join(' / ')} が絡む試合）。</p>`;
+      入らない。<strong>対戦と結果</strong>を押すとその試合のページへ飛ぶ。${
+      EXCLUDE_NOTE.length ? `灰色の行は個別ページを作っていない試合
+      （${EXCLUDE_NOTE.join(' / ')} が絡む試合）。` : ''}</p>`;
 }
 
 /* --------------------------------------------------- 出場時間の分布 */
