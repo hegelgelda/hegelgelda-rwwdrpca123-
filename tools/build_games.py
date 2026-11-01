@@ -616,6 +616,15 @@ def main() -> None:
             "ap": g["score"]["away"], "hp": g["score"]["home"],
             "np": len(g["periods"]),
         })
+    # ★ 接続を閉じる前に取っておく。未実施試合の日付と対戦は
+    #   市場との突合（後ろの方）で使う。
+    sch_future = {r[0]: (str(r[1])[:10], r[2], r[3]) for r in con.execute("""
+        select game_id, game_date, away_tri, home_tri
+        from game_schedule
+        where season = '2026-27' and season_type = 'Regular Season'
+          and game_status = 1
+    """).fetchall()}
+
     con.close()
 
     index.sort(key=lambda x: (x["d"], x["id"]))
@@ -642,11 +651,51 @@ def main() -> None:
                 got = True
         if got:
             mk.append(rec)
+    # ---- 未実施試合: モデルと市場を並べる
+    # ★ `model.json` は `build_page1.py` が同じ実行の**前の段**で書いている。
+    #   順番を入れ替えるとここが空になる。
+    # ★ 符号: `spread` は「ホームのハンディ」で負がホーム有利。
+    #   市場が見ているホームの得点差は `-spread`。
+    #   モデルの `pred` はホーム基準の得点差そのもの。
+    up = []
+    try:
+        with open(OUT / "model.json", encoding="utf-8") as f:
+            mj = json.load(f)
+        mg = mj.get("games") or {}
+    except Exception:
+        mg = {}
+    if mg:
+        sch = sch_future
+        for gid, od in (odds or {}).items():
+            if od.get("status") != 1 or gid not in sch or gid not in mg:
+                continue
+            d, aw, hm = sch[gid]
+            ser = od.get("series") or {}
+            rec = {"id": gid, "d": d, "a": aw, "h": hm}
+            for key, short in (("ml", "ml"), ("spread", "sp"), ("total", "tt")):
+                pts = (ser.get(key) or {}).get("kalshi") or []
+                if pts:
+                    rec["m_%s" % short] = pts[-1][1]
+                    rec["m_%s_m" % short] = int(round(-pts[-1][0]))
+            if "m_ml" not in rec:
+                continue
+            m = mg[gid]
+            rec["pred"] = m.get("pred")
+            rec["p"] = m.get("p")
+            rec["total"] = m.get("total")
+            # 差はホーム基準。正ならモデルのほうがホーム寄り
+            if rec.get("m_sp") is not None and rec["pred"] is not None:
+                rec["d_sp"] = round(rec["pred"] + rec["m_sp"], 2)
+            if rec["p"] is not None:
+                rec["d_p"] = round(rec["p"] - rec["m_ml"], 1)
+            up.append(rec)
+        up.sort(key=lambda x: (x["d"], x["id"]))
+
     with open(OUT / "market.json", "w", encoding="utf-8") as f:
-        json.dump({"season": SEASON, "games": mk}, f,
+        json.dump({"season": SEASON, "games": mk, "upcoming": up}, f,
                   ensure_ascii=False, separators=(",", ":"))
-    print("市場: %d 試合 -> %s"
-          % (len(mk), (OUT / "market.json").name))
+    print("市場: 終了 %d 試合 / 未実施 %d 試合 -> %s"
+          % (len(mk), len(up), (OUT / "market.json").name))
 
     with open(OUT / "games_index.json", "w", encoding="utf-8") as f:
         json.dump({"season": a.season, "games": index}, f,

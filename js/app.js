@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '2bf6e643';
+const DATA_V = '5251ace8';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -558,6 +558,44 @@ async function renderMarket() {
       <td class="n">${p1(g.k_ml)}%</td>
       <td class="n b">${p1(s)}%</td></tr>`).join('');
 
+  /* ---- 未実施試合: モデルと市場を並べる
+     ★ `pred` と市場の `-m_sp` はどちらも**ホーム基準の得点差**。
+       差が正なら、モデルのほうがホームを高く買っている。 */
+  const up = d.upcoming || [];
+  const upTable = !up.length ? '' : `
+    <h2>これからの試合：モデル vs 市場</h2>
+    <p class="sub">${up.length} 試合。モデルは段階1（可用性なし・v1）、
+      市場は Kalshi の最新値。<strong>どちらもホーム基準</strong>で、
+      得点差は正がホーム有利。差はモデル − 市場。
+      <strong>市場はまだ動く</strong>（終値ではない）。
+      右端は「その市場の値がティップの何時間前のものか」。</p>
+    <div class="wrap"><table class="career vstab">
+      <thead><tr><th class="n">日付</th><th>対戦</th>
+        <th class="n">モデル</th><th class="n">市場</th><th class="n">差</th>
+        <th class="n">モデル%</th><th class="n">市場%</th><th class="n">差</th>
+        <th class="n">市場の時点</th></tr></thead>
+      <tbody>${up.map((g) => `<tr>
+        <td class="n dim">${esc(g.d.slice(5).replace('-', '/'))}</td>
+        <td><a href="#/team/${esc(g.a)}">${esc(g.a)}</a>
+          <span class="at">＠</span>
+          <a href="#/team/${esc(g.h)}">${esc(g.h)}</a></td>
+        <td class="n">${g.pred > 0 ? '+' : ''}${num(g.pred)}</td>
+        <td class="n">${g.m_sp === undefined ? '—'
+          : (-g.m_sp > 0 ? '+' : '') + num(-g.m_sp)}</td>
+        <td class="n ${Math.abs(g.d_sp ?? 0) >= 3 ? 'warnv' : 'dim'}">${
+          g.d_sp === undefined ? '—' : (g.d_sp > 0 ? '+' : '') + num(g.d_sp)}</td>
+        <td class="n">${num(g.p)}%</td>
+        <td class="n">${num(g.m_ml)}%</td>
+        <td class="n ${Math.abs(g.d_p ?? 0) >= 8 ? 'warnv' : 'dim'}">${
+          g.d_p === undefined ? '—' : (g.d_p > 0 ? '+' : '') + num(g.d_p)}pt</td>
+        <td class="n dim">${hhmm(g.m_ml_m)}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="sub">★ 差が大きい試合は<strong>どちらかが外している</strong>という
+      意味で、どちらが正しいかは結果が出るまで分からない。
+      モデルは<strong>欠場を一切見ていない</strong>（v1）ので、
+      主力が離脱している試合ほど市場のほうが正しいはず。</p>`;
+
   view.innerHTML = `
     <h1>市場の事後検証</h1>
     <p class="sub">${esc(d.season)}・オッズと結果がそろった <strong>${
@@ -565,7 +603,9 @@ async function renderMarket() {
       （Kalshi は 15 分刻み、ブックは 1 日 4 回なので古いことがある）。
       <strong>これは市場の成績であって、こちらのモデルの評価ではない。</strong></p>
 
-    <h2>マネーライン</h2>
+    ${upTable}
+
+    <h2>マネーライン（終わった試合）</h2>
     <div class="wrap"><table class="career">
       <thead><tr><th>出どころ</th><th class="n">n</th><th class="n">logloss</th>
         <th class="n">SE</th><th class="n">Brier</th><th class="n">的中率</th>
