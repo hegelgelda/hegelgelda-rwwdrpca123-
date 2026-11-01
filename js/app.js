@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '99216b5e';
+const DATA_V = '2bf6e643';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -40,6 +40,20 @@ async function results() {
     RESULTS = {};
   }
   return RESULTS;
+}
+
+/* 段階1 の出力（未実施試合の予測とレーティング）。
+   ★ 無くても日程は出す。`predict_upcoming.py` をまだ回していない環境や、
+     JSON を作り直す前でも壊れないように、失敗は空で飲む */
+let MODEL = null;
+async function model() {
+  if (MODEL) return MODEL;
+  try {
+    MODEL = await load('model');
+  } catch (e) {
+    MODEL = { games: {}, ratings: [] };
+  }
+  return MODEL;
 }
 
 /* ------------------------------------------------------------- 小道具 */
@@ -123,6 +137,7 @@ const pc = (v) => (v === null || v === undefined)
 async function renderSchedule(dateArg) {
   const sc = await load('schedule');
   await results();
+  await model();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -183,6 +198,7 @@ async function renderSchedule(dateArg) {
 async function renderWeek(dateArg) {
   const sc = await load('schedule');
   await results();
+  await model();
   const games = sc.games;
   const days = [...new Set(games.map((g) => g.d))].sort();
   const first = days[0], last = days[days.length - 1];
@@ -250,6 +266,16 @@ function gameRow(g) {
                  && r.hp !== null && r.hp !== undefined;
   const ot = done && r.np > 4
     ? `<span class="badge">OT${r.np - 4 > 1 ? r.np - 4 : ''}</span>` : '';
+  /* まだの試合にはモデルの予想を添える。`pred` はホーム基準の得点差 */
+  const mp = done ? null : ((MODEL && MODEL.games) || {})[g.game_id];
+  const mpred = !mp ? '' : (() => {
+    const homeFav = mp.pred >= 0;
+    const tri = homeFav ? g.h : g.a;
+    const pts = Math.abs(mp.pred).toFixed(1);
+    const p = homeFav ? mp.p : 100 - mp.p;
+    return `<span class="mpred" title="段階1 の予測（可用性なし）"
+      >${esc(tri)} −${pts}<span class="pp">${p.toFixed(0)}%</span></span>`;
+  })();
   /* ★ `p: 0` は「個別ページを作っていない試合」。容量のため一部のチームが
      絡む試合はページを作っていない（tools/build_games.py の EXCLUDE_TRI）。
      スコアは索引にあるので出すが、リンクにはしない */
@@ -281,6 +307,7 @@ function gameRow(g) {
     <div class="match">
       ${match}
       ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}
+      ${mpred}
     </div>
     <div class="meta">
       ${g.tv ? `<span class="tv">${esc(g.tv)}</span> · ` : ''}
@@ -592,6 +619,7 @@ async function renderMarket() {
      追いついていないため、`build_page1.py` が raw から作り直している。 */
 async function renderStandings() {
   const st = await load('standings');
+  const md = await model();
   const CONF = ['East', 'West'];
   const table = (conf) => {
     const rows = st.teams.filter((t) => t.conf === conf);
@@ -638,7 +666,34 @@ async function renderStandings() {
     <div class="standgrid">${CONF.map(table).join('')}</div>
     <p class="sub">GB はカンファレンス首位との差。ORtg / DRtg は
       <strong>ポゼッションで重み付けした</strong>平均（試合ごとの率の単純平均
-      ではない）。Net = ORtg − DRtg。</p>`;
+      ではない）。Net = ORtg − DRtg。</p>
+
+    ${(md.ratings || []).length ? `
+      <h2>モデルのレーティング</h2>
+      <p class="sub">段階1（リッジ・半減期 80 日・罰則 3）が
+        <strong>${esc(md.as_of || '')} 時点</strong>で推定した実力。
+        上の表と違って<strong>相手の強さで補正してあり、古い試合は軽い</strong>。
+        単位は 100 ポゼッションあたりの点。
+        <strong>def は正が良い守備</strong>で、総合 = off + def。
+        可用性（欠場）は<strong>使っていない</strong>（v1）。</p>
+      <div class="wrap"><table class="career rate">
+        <thead><tr><th class="n">#</th><th>チーム</th><th class="n">攻撃</th>
+          <th class="n">守備</th><th class="n">総合</th></tr></thead>
+        <tbody>${md.ratings.map((t, i) => `<tr class="${
+          FAV.has(t.tri) ? 'fav' : ''}">
+          <td class="n dim">${i + 1}</td>
+          <td><a class="tm${FAV.has(t.tri) ? ' is-fav' : ''}"
+                 href="#/team/${esc(t.tri)}">${esc(t.tri)}</a></td>
+          <td class="n ${t.off > 0 ? 'up' : t.off < 0 ? 'down' : ''}">${
+            t.off > 0 ? '+' : ''}${num(t.off, 2)}</td>
+          <td class="n ${t.def > 0 ? 'up' : t.def < 0 ? 'down' : ''}">${
+            t.def > 0 ? '+' : ''}${num(t.def, 2)}</td>
+          <td class="n b ${t.net > 0 ? 'up' : t.net < 0 ? 'down' : ''}">${
+            t.net > 0 ? '+' : ''}${num(t.net, 2)}</td>
+        </tr>`).join('')}</tbody>
+      </table></div>
+      <p class="sub">予想得点差の σ は <strong>${num(md.sigma, 1)} 点</strong>。
+        これも推定値で、序盤はレーティングの誤差が大きいぶん広い。</p>` : ''}`;
 }
 
 /* ------------------------------------------------------- 選手一覧（今季） */

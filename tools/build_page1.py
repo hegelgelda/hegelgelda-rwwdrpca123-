@@ -320,6 +320,38 @@ def main() -> None:
     else:
         tot += keep(a.out, "season_players.json")
 
+    # ------------------------------------------------- モデルの出力（段階1）
+    # `predict_upcoming.py` が書いた未実施試合の予測とレーティング。
+    # ★ 同じ試合を何度も予測するので、**一番新しい基準日のぶん**だけ出す。
+    #   過去の予測は DB に残す（市場と同じ土俵で測るのに要る）。
+    if has_table(con, "stage1_future") and has_table(con, "team_rating_snapshot"):
+        as_of = con.execute(
+            "select max(as_of) from team_rating_snapshot").fetchone()[0]
+        rt = con.execute("""
+            select team as tri, off, def, net
+            from team_rating_snapshot where as_of = ?
+            order by net desc""", [as_of]).df()
+        pr = con.execute("""
+            select game_id, pred, sigma, p_home, total, pace_hat
+            from stage1_future
+            where as_of = (select max(as_of) from stage1_future)""").df()
+        games = {}
+        for x in pr.to_dict("records"):
+            games[x["game_id"]] = {
+                "pred": r1(x["pred"], 2), "p": r1(x["p_home"] * 100, 1),
+                "total": r1(x["total"], 1), "pace": r1(x["pace_hat"], 1),
+            }
+        tot += write(a.out, "model.json", {
+            "season": SEASON,
+            "as_of": str(as_of),
+            "sigma": r1(float(pr.sigma.iloc[0]), 2) if len(pr) else None,
+            "ratings": [{k: (v if k == "tri" else r1(v, 2))
+                         for k, v in x.items()} for x in rt.to_dict("records")],
+            "games": games,
+        })
+    else:
+        print("  model.json       （predict_upcoming.py をまだ回していない）")
+
     # ---------------------------------------------------------- rosters
     # 起用ブレ指数。ロスター表にも 1季版（DDI_25）を出す。
     # ★ 生の DDI は出場時間の水準と独立ではないので、帯内パーセンタイルも

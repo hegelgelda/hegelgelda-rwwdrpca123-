@@ -797,3 +797,18 @@ table.injlog td.rsn2 { white-space: normal; font-size: 12px; max-width: 320px; }
 table.injlog .hb { display: block; font-size: 11px; color: var(--muted);
                    font-family: var(--mono); margin-top: 2px; }
 .pubwrap { margin-bottom: 10px; }
+
+/* 日程の行に添えるモデルの予想 */
+.mpred {
+  margin-left: 10px; font-size: 12px; font-family: var(--mono);
+  color: var(--muted); white-space: nowrap;
+}
+.mpred .pp { margin-left: 5px; color: var(--accent); }
+
+/* モデルのレーティング表 */
+table.rate { font-size: 13px; white-space: nowrap; }
+table.rate td, table.rate th { padding: 6px 8px; }
+table.rate td.b { font-weight: 700; }
+table.rate td.up { color: var(--accent); }
+table.rate td.down { color: var(--warn); }
+table.rate tr.fav td { background: var(--fav-soft); }
