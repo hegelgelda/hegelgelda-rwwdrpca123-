@@ -768,3 +768,6 @@ header.site .find input:focus { outline: none; border-color: var(--accent);
    ページ全体が横スクロールする（375px の画面が 908px になった）。
    `.wrap` の中でだけ横スクロールさせるために 0 を明示する */
 .standgrid > section { min-width: 0; }
+
+/* 市場の事後検証。2 SE を超えた欄に印を付けるだけ（結論ではない） */
+td.warnv { color: var(--warn); font-weight: 700; }

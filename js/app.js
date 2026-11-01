@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '41d75301';
+const DATA_V = '1dccc4f8';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -287,6 +287,190 @@ function gameRow(g) {
       ${esc(g.city || '')}
     </div>
   </div>`;
+}
+
+/* ------------------------------------------------------- 市場の事後検証
+
+   ★ これは「市場がどれだけ当てたか」を測る画面で、こちらのモデルの
+     評価ではない（段階1 の予測を未実施試合に出す経路はまだ無い）。
+   ★ 標本が小さい。n が数十のうちは **SE を必ず併記する**。
+     いくつも指標を並べているので、どれか1つが 2 シグマに届いても
+     それだけで「市場の誤り」と読まないこと。 */
+
+const mean = (v) => v.reduce((s, x) => s + x, 0) / v.length;
+const sd = (v) => {
+  if (v.length < 2) return null;
+  const m = mean(v);
+  return Math.sqrt(v.reduce((s, x) => s + (x - m) ** 2, 0) / (v.length - 1));
+};
+const se = (v) => (v.length < 2 ? null : sd(v) / Math.sqrt(v.length));
+const clamp01 = (p) => Math.min(Math.max(p, 1e-6), 1 - 1e-6);
+const logLoss1 = (p, y) => -(y * Math.log(clamp01(p)) + (1 - y) * Math.log(1 - clamp01(p)));
+
+function mlStats(rows, tag) {
+  const use = rows.filter((g) => g[`${tag}_ml`] !== undefined
+                              && g[`${tag}_ml`] !== null);
+  if (!use.length) return null;
+  const p = use.map((g) => g[`${tag}_ml`] / 100);
+  const y = use.map((g) => (g.hp > g.ap ? 1 : 0));
+  const per = p.map((v, i) => logLoss1(v, y[i]));
+  const brier = p.map((v, i) => (v - y[i]) ** 2);
+  const hit = p.filter((v, i) => (v > 0.5) === (y[i] === 1)).length / use.length;
+  const mins = use.map((g) => g[`${tag}_ml_m`]).sort((x, z) => x - z);
+  return {
+    n: use.length, ll: mean(per), llse: se(per),
+    brier: mean(brier), hit,
+    med: mins[Math.floor(mins.length / 2)],
+    p, y,
+  };
+}
+
+function lineStats(rows, tag, key, actual) {
+  const use = rows.filter((g) => g[`${tag}_${key}`] !== undefined
+                              && g[`${tag}_${key}`] !== null);
+  if (!use.length) return null;
+  /* spread は「ホームのハンディ」。予想得点差は符号を反転した値なので、
+     誤差 = 実際の得点差 − (−spread) = 得点差 + spread */
+  const err = use.map((g) => (key === 'sp'
+    ? (g.hp - g.ap) + g[`${tag}_sp`]
+    : (g.hp + g.ap) - g[`${tag}_tt`]));
+  const over = err.filter((e) => e > 0).length / use.length;
+  const mins = use.map((g) => g[`${tag}_${key}_m`]).sort((x, z) => x - z);
+  return {
+    n: use.length,
+    mae: mean(err.map(Math.abs)), rmse: Math.sqrt(mean(err.map((e) => e * e))),
+    bias: mean(err), bse: se(err), over,
+    med: mins[Math.floor(mins.length / 2)],
+  };
+}
+
+function calib(s) {
+  const EDGE = [0, 0.35, 0.45, 0.55, 0.65, 1.001];
+  const out = [];
+  for (let i = 0; i < EDGE.length - 1; i++) {
+    const ix = s.p.map((v, k) => k).filter((k) => s.p[k] >= EDGE[i] && s.p[k] < EDGE[i + 1]);
+    if (!ix.length) continue;
+    out.push({
+      lo: EDGE[i], hi: Math.min(EDGE[i + 1], 1), n: ix.length,
+      pred: mean(ix.map((k) => s.p[k])),
+      act: mean(ix.map((k) => s.y[k])),
+    });
+  }
+  return out;
+}
+
+async function renderMarket() {
+  const d = await load('market');
+  const rows = d.games;
+  if (!rows.length) {
+    view.innerHTML = `<h1>市場の事後検証</h1>
+      <p class="empty">オッズと結果がそろった試合がまだ無い。</p>`;
+    return;
+  }
+  const K = mlStats(rows, 'k'), B = mlStats(rows, 'b');
+  const hr = mean(rows.map((g) => (g.hp > g.ap ? 1 : 0)));
+  const baseHome = -(hr * Math.log(hr) + (1 - hr) * Math.log(1 - hr));
+  const p1 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(1);
+  const p3 = (v) => (v === null || v === undefined) ? '—' : v.toFixed(3);
+  const pc1 = (v) => (v === null || v === undefined) ? '—' : `${(v * 100).toFixed(1)}%`;
+  const pm = (v, dig = 2) => (v > 0 ? '+' : '') + v.toFixed(dig);
+
+  const mlRow = (nm, s) => s ? `<tr>
+    <td>${nm}</td><td class="n">${s.n}</td>
+    <td class="n b">${p3(s.ll)}</td><td class="n dim">±${p3(s.llse)}</td>
+    <td class="n">${p3(s.brier)}</td><td class="n">${pc1(s.hit)}</td>
+    <td class="n dim">${s.med} 分前</td></tr>` : '';
+
+  const line = (key, nm, actual) => {
+    const k = lineStats(rows, 'k', key), b = lineStats(rows, 'b', key);
+    const r = (lab, s) => s ? `<tr><td>${lab}</td><td class="n">${s.n}</td>
+      <td class="n b">${p1(s.mae)}</td><td class="n">${p1(s.rmse)}</td>
+      <td class="n ${Math.abs(s.bias) > 2 * s.bse ? 'warnv' : ''}">${pm(s.bias)}</td>
+      <td class="n dim">±${p1(s.bse)}</td>
+      <td class="n">${pc1(s.over)}</td>
+      <td class="n dim">${s.med} 分前</td></tr>` : '';
+    return `<h3>${nm}</h3>
+      <div class="wrap"><table class="career">
+        <thead><tr><th>出どころ</th><th class="n">n</th><th class="n">MAE</th>
+          <th class="n">RMSE</th><th class="n">偏り</th><th class="n">SE</th>
+          <th class="n">${actual}</th><th class="n">終値</th></tr></thead>
+        <tbody>${r('Kalshi', k)}${r('ブック 9 社', b)}</tbody>
+      </table></div>`;
+  };
+
+  const cal = calib(K).map((c) => `<tr>
+    <td class="n">${(c.lo * 100).toFixed(0)}–${(c.hi * 100).toFixed(0)}%</td>
+    <td class="n">${c.n}</td>
+    <td class="n">${pc1(c.pred)}</td>
+    <td class="n b">${pc1(c.act)}</td>
+    <td class="n ${Math.abs(c.act - c.pred)
+      > 2 * Math.sqrt(c.pred * (1 - c.pred) / c.n) ? 'warnv' : 'dim'}">${
+      pm((c.act - c.pred) * 100, 1)}pt</td></tr>`).join('');
+
+  /* 外れの大きかった試合。市場の勝率が低いほうが勝った順 */
+  const miss = rows.filter((g) => g.k_ml !== undefined && g.k_ml !== null)
+    .map((g) => ({ g, s: (g.hp > g.ap ? 100 - g.k_ml : g.k_ml) }))
+    .sort((x, z) => z.s - x.s).slice(0, 8)
+    .map(({ g, s }) => `<tr>
+      <td class="n">${esc(g.d.slice(5).replace('-', '/'))}</td>
+      <td><a href="#/game/${esc(g.id)}">${esc(g.a)} @ ${esc(g.h)}</a></td>
+      <td class="n">${g.ap}-${g.hp}</td>
+      <td class="n">${p1(g.k_ml)}%</td>
+      <td class="n b">${p1(s)}%</td></tr>`).join('');
+
+  view.innerHTML = `
+    <h1>市場の事後検証</h1>
+    <p class="sub">${esc(d.season)}・オッズと結果がそろった <strong>${
+      rows.length} 試合</strong>。終値は<strong>各ソースでティップに一番近い点</strong>
+      （Kalshi は 15 分刻み、ブックは 1 日 4 回なので古いことがある）。
+      <strong>これは市場の成績であって、こちらのモデルの評価ではない。</strong></p>
+
+    <h2>マネーライン</h2>
+    <div class="wrap"><table class="career">
+      <thead><tr><th>出どころ</th><th class="n">n</th><th class="n">logloss</th>
+        <th class="n">SE</th><th class="n">Brier</th><th class="n">的中率</th>
+        <th class="n">終値</th></tr></thead>
+      <tbody>${mlRow('Kalshi', K)}${mlRow('ブック 9 社', B)}
+        <tr class="total"><td>五分（p=0.5）</td><td class="n">${rows.length}</td>
+          <td class="n">${p3(Math.log(2))}</td><td class="n dim">—</td>
+          <td class="n">0.250</td><td class="n dim">—</td><td class="n dim">—</td></tr>
+        <tr class="total"><td>ホーム勝率一定（${pc1(hr)}）</td>
+          <td class="n">${rows.length}</td><td class="n">${p3(baseHome)}</td>
+          <td class="n dim">—</td><td class="n">${p3(hr * (1 - hr))}</td>
+          <td class="n dim">—</td><td class="n dim">—</td></tr>
+      </tbody>
+    </table></div>
+
+    <h3>較正（Kalshi）</h3>
+    <div class="wrap"><table class="career">
+      <thead><tr><th class="n">予測の帯</th><th class="n">n</th>
+        <th class="n">予測の平均</th><th class="n">実測</th>
+        <th class="n">差</th></tr></thead>
+      <tbody>${cal}</tbody>
+    </table></div>
+    <p class="sub">色が付くのは<strong>二項の 2 SE を超えた帯</strong>だけ
+      （n = 10 なら ±30 ポイントまでは誤差の範囲）。帯が 5 つあるので、
+      1 つくらい超えるのはむしろ普通。${rows.length} 試合では較正の
+      良し悪しは決まらない。</p>
+
+    ${line('sp', 'スプレッド（ホームの得点差）', 'ホームがカバー')}
+    ${line('tt', 'トータル（合計得点）', 'オーバー')}
+
+    <h2>大きく外した試合</h2>
+    <div class="wrap"><table class="career">
+      <thead><tr><th class="n">日付</th><th>対戦</th><th class="n">結果</th>
+        <th class="n">ホーム勝率</th><th class="n">勝った側の事前</th></tr></thead>
+      <tbody>${miss}</tbody>
+    </table></div>
+
+    <p class="sub">
+      ★ <strong>標本が小さい。</strong>logloss の SE は ±0.04 前後で、
+      ここに並ぶ差のほとんどは誤差に埋もれる。偏りの欄で色が付くのは
+      「2 SE を超えた」という印にすぎず、いくつも指標を並べている以上
+      それだけで市場の誤りとは読めない。試合が積み上がるまで結論は保留。
+      <br>★ オッズがあるのは収集を始めた 2026-10-23 以降の試合だけなので、
+      この標本は今季全体とは別物（この標本のホーム勝率 ${pc1(hr)}）。
+    </p>`;
 }
 
 /* ------------------------------------------------------------- 順位表 */
@@ -1788,10 +1972,13 @@ async function renderGame(gid) {
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const nav = { schedule: 'on', standings: '', teams: '', players: '',
-                reports: '' };
+                market: '', reports: '' };
   try {
     view.innerHTML = '<p class="loading">読み込み中…</p>';
-    if (parts[0] === 'standings') {
+    if (parts[0] === 'market') {
+      nav.schedule = ''; nav.market = 'on';
+      await renderMarket();
+    } else if (parts[0] === 'standings') {
       nav.schedule = ''; nav.standings = 'on';
       await renderStandings();
     } else if (parts[0] === 'players') {
