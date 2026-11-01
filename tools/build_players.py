@@ -56,12 +56,18 @@ def q(s: str) -> str:
 def r1(v, dig=1):
     """None と NaN を潰して丸める。
 
-    ★ build_page1.py と同じ理由で NaN をここで落とす。
-      pandas の NaN は真値なので `if v else None` では消えない。
+    ★ 素の `round()` を使わないこと。`mp/g` がちょうど 11.85 のような
+      境界に乗ると、浮動小数の最後の桁（11.84999... か 11.85000...）で
+      11.8 と 11.9 が入れ替わる。join の行順が変わるだけで結果が動き、
+      毎日の差分に無意味な揺れが出る（2026-11-01 に 3 選手で実際に出た）。
+      一度多めの桁で丸めてから、0.5 は常に外側へ寄せる。
     """
     if v is None or v != v:
         return None
-    return round(float(v), dig)
+    v = round(float(v), dig + 6)
+    f = 10 ** dig
+    n = int(abs(v) * f + 0.5)
+    return (n / f) if v >= 0 else -(n / f)
 
 
 def pct(made, att, dig=3):
