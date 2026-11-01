@@ -661,3 +661,10 @@ td .res.nolink { color: var(--muted); }
 .wl.w { color: var(--accent); }
 .wl.l { color: var(--warn); }
 td .ot { font-size: 11px; color: var(--muted); margin-left: 3px; }
+
+/* 選手ページ「今季の試合」 */
+table.loggame { white-space: nowrap; }
+table.loggame td.b { color: var(--ink); font-weight: 700; }
+table.loggame td.up { color: var(--accent); }
+table.loggame td.down { color: var(--warn); }
+table.loggame .wl { margin-right: 4px; }

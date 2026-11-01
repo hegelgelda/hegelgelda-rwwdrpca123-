@@ -90,7 +90,12 @@ def main() -> None:
     print(f"対象 {len(ids):,} 名 → {pdir}\n")
 
     # シーズン × 種別で集計。出場した試合だけ（min is not null）。
-    # 先発は panel_start。2021-22 以降は欠けが無いのを確認済み。
+    # ★ 先発は `player_track.position`（先発枠のラベル）から直に取る。
+    #   `panel_start` は `build_player_panel.py` が作る派生表で、同じ式だが
+    #   **進行中の季には追いついていない**（2026-27 は 0 行で、2026-10-31 時点で
+    #   全員 gs = 0 になっていた）。派生表は研究の前提なので作り直さない。
+    # ★ 取材前日までしか返らないので、最新日の試合は track 行が無い。
+    #   その試合は 0 ではなく **null**（不明）にして合計から外す。
     # ★ SQL 内に -- コメントを書かないこと。q() が改行を潰すので、
     #   以降のクエリ全体がコメント扱いになって消える。
     rows = con.execute(q(f"""
@@ -101,7 +106,7 @@ def main() -> None:
                array_to_string(list_distinct(
                    list(team_abbreviation order by game_date)), '/') as teams,
                count(*)                                     as g,
-               sum(coalesce(st.started, 0))                 as gs,
+               sum(st.started)                              as gs,
                sum(split_part(min_sec,':',1)::double
                    + split_part(min_sec,':',2)::double/60)  as mp,
                sum(fgm) as fgm, sum(fga) as fga,
@@ -112,7 +117,12 @@ def main() -> None:
                sum(tov) as tov, sum(pf) as pf, sum(pts) as pts,
                sum(plus_minus) as pm
         from player_game_base b
-        left join panel_start st using (game_id, player_id)
+        left join (
+            select game_id, person_id as player_id,
+                   case when coalesce(trim(position), '') <> '' then 1 else 0 end
+                     as started
+            from player_track where person_id is not null) st
+          using (game_id, player_id)
         where b.min is not null
           and b.season_year >= '{FIRST}'
           and b.player_id in ({','.join(str(i) for i in ids)})
@@ -127,7 +137,7 @@ def main() -> None:
         return {
             "y": y, "st": st, "teams": teams, "label": label,
             "g": g,
-            "gs": int(d["gs"]),
+            "gs": None if d["gs"] != d["gs"] else int(d["gs"]),
             "mpg": r1(d["mp"] / g),
             "fgm": per("fgm"), "fga": per("fga"),
             "fg": pct(d["fgm"], d["fga"]),
@@ -182,6 +192,66 @@ def main() -> None:
         if one or three:
             by_player[int(pid)] = {"bin": BIN, "s1": one, "s3": three}
 
+    # ------------------------------------------------ 今季の試合ごとの成績
+    # 選手ページに「ここまでの試合」を出す。出場した試合だけ（DNP は入らない）。
+    # ★ 最終得点は `team_game_adv` から取れない（Advanced には PTS が無い）。
+    #   `player_game_base` をチームごとに合計する。build_games.py と同じ手。
+    # ★ 相手の略号は `matchup` の文字列ではなく、合計表の相方から取る。
+    #   こちらの tricode とそろうので、試合ページへのリンクに使える。
+    glog = con.execute(q(f"""
+        with sc as (
+          select game_id, team_abbreviation as tri, sum(pts) as pts
+          from player_game_base
+          where season_year = '{SEASON}'
+          group by 1, 2)
+        select b.player_id, b.game_id, b.game_date, b.matchup, b.wl,
+               st.started, b.min_sec,
+               b.pts, b.reb, b.oreb, b.dreb, b.ast, b.stl, b.blk, b.tov, b.pf,
+               b.fgm, b.fga, b.fg3m, b.fg3a, b.ftm, b.fta, b.plus_minus,
+               me.pts as tpts, op.pts as opts, op.tri as opp
+        from player_game_base b
+        left join (
+            select game_id, person_id as player_id,
+                   case when coalesce(trim(position), '') <> '' then 1 else 0 end
+                     as started
+            from player_track where person_id is not null) st
+          using (game_id, player_id)
+        join sc me on me.game_id = b.game_id
+                  and me.tri = b.team_abbreviation
+        join sc op on op.game_id = b.game_id
+                  and op.tri <> b.team_abbreviation
+        where b.season_year = '{SEASON}'
+          and b.min is not null
+          and b.player_id in ({','.join(str(i) for i in ids)})
+        order by b.player_id, b.game_date desc
+    """)).fetchdf()
+
+    def gi(v):
+        return None if v is None or v != v else int(v)
+
+    log_by: dict[int, list] = {}
+    for x in glog.to_dict("records"):
+        log_by.setdefault(int(x["player_id"]), []).append({
+            "g": x["game_id"],
+            "d": str(x["game_date"])[:10],
+            "o": x["opp"],
+            "h": 1 if " vs. " in (x["matchup"] or "") else 0,
+            "w": 1 if x["wl"] == "W" else 0,
+            "sc": "%d-%d" % (gi(x["tpts"]), gi(x["opts"])),
+            "s": gi(x["started"]),
+            "mp": x["min_sec"],
+            "pts": gi(x["pts"]), "reb": gi(x["reb"]),
+            "oreb": gi(x["oreb"]), "dreb": gi(x["dreb"]),
+            "ast": gi(x["ast"]), "stl": gi(x["stl"]), "blk": gi(x["blk"]),
+            "tov": gi(x["tov"]), "pf": gi(x["pf"]),
+            "fgm": gi(x["fgm"]), "fga": gi(x["fga"]),
+            "tpm": gi(x["fg3m"]), "tpa": gi(x["fg3a"]),
+            "ftm": gi(x["ftm"]), "fta": gi(x["fta"]),
+            "pm": gi(x["plus_minus"]),
+        })
+    print("今季の試合ログ %d 名 / %d 行"
+          % (len(log_by), sum(len(v) for v in log_by.values())))
+
     n_file = n_byte = 0
     for pid, grp in rows.groupby("player_id", sort=False):
         seasons, career, recent = [], {}, {}
@@ -211,6 +281,8 @@ def main() -> None:
             "ddi": ddi.get(int(pid)),
             "d1": DIST1,
             "d3": f"{DIST3[0]} 〜 {DIST3[1]}",
+            "season": SEASON,
+            "log": log_by.get(int(pid)),
         }
         p = os.path.join(pdir, f"{pid}.json")
         with open(p, "w", encoding="utf-8") as f:

@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '6b84eba9';
+const DATA_V = '591892aa';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -462,6 +462,7 @@ function findPlayer(rost, id) {
 
 async function renderPlayer(id) {
   const [teams, rost] = await Promise.all([load('teams'), load('rosters')]);
+  await results();   /* 今季の試合ログから試合ページへ飛ばすため */
   const hit = findPlayer(rost, id);
   const team = hit ? teams.find((t) => t.tri === hit.tri) : null;
 
@@ -498,6 +499,7 @@ async function renderPlayer(id) {
     </p>` : ''}
     ${car ? careerTable(car)
       : `<p class="empty">2021-22 以降の出場記録が無い。</p>`}
+    ${car ? gameLog(car) : ''}
     ${car ? distBlock(car) : ''}
     ${car ? modelBlock(car) : ''}`;
 
@@ -564,6 +566,73 @@ function careerTable(car) {
     （試合ごとの率の平均ではない）。
     <strong>${esc(car.first)}</strong> 以降のシーズンのみ。
   </p>`;
+}
+
+/* ------------------------------------------------- 今季の試合ごとの成績
+   ★ **出場した試合しか出ない。** DNP と欠場は `player_game_base` に
+     行が無いので、ここには現れない（「試合数」は出場した数）。
+   ★ 先発は `player_track.position`。最新日の試合はトラッキングが
+     まだ返らないので、その試合だけ不明（`null`）になる。 */
+
+function gameLog(car) {
+  const log = car.log || [];
+  const season = car.season || '';
+  if (!log.length) {
+    return `<h2>今季の試合</h2>
+      <p class="empty">${esc(season)} の出場記録がまだ無い。</p>`;
+  }
+  /* 平均はシーズン行をそのまま使う（careerTable と同じ数字になる） */
+  const cur = (car.seasons || []).find((s) => s.y === season && s.st === 'R');
+  const w = log.filter((r) => r.w).length;
+  const sum = `<p class="sub">
+    ${log.length} 試合（<strong>${w} 勝 ${log.length - w} 敗</strong>）${
+      cur && cur.gs !== null && cur.gs !== undefined
+        ? `・先発 ${cur.gs}` : ''}${cur ? `・1 試合平均
+    <strong>${num(cur.mpg)} 分 / ${num(cur.pts)} 点 /
+    ${num(cur.reb)} REB / ${num(cur.ast)} AST</strong>` : ''}</p>`;
+
+  const rows = log.map((r) => {
+    const res = (RESULTS || {})[r.g];
+    const vs = `${r.h ? 'vs' : '@'} ${esc(r.o)}`;
+    return `<tr>
+      <td class="n">${esc(r.d.slice(5).replace('-', '/'))}</td>
+      <td>${res && res.p !== 0
+        ? `<a href="#/game/${esc(r.g)}">${vs}</a>`
+        : `<span class="dim" title="この試合は個別ページを作っていない"
+             >${vs}</span>`}</td>
+      <td class="n"><span class="wl ${r.w ? 'w' : 'l'}">${r.w ? '○' : '●'}</span
+        >${esc(r.sc)}</td>
+      <td class="n">${r.s === 1 ? '先発'
+        : r.s === 0 ? '<span class="dim">—</span>'
+          : '<span class="dim" title="トラッキングがまだ来ていない">?</span>'}</td>
+      <td class="n">${esc(r.mp)}</td>
+      <td class="n b">${r.pts}</td>
+      <td class="n">${r.reb}</td>
+      <td class="n">${r.ast}</td>
+      <td class="n">${r.fgm}-${r.fga}</td>
+      <td class="n">${r.tpm}-${r.tpa}</td>
+      <td class="n">${r.ftm}-${r.fta}</td>
+      <td class="n">${r.stl}</td>
+      <td class="n">${r.blk}</td>
+      <td class="n">${r.tov}</td>
+      <td class="n">${r.pf}</td>
+      <td class="n ${r.pm > 0 ? 'up' : r.pm < 0 ? 'down' : ''}">${
+        r.pm > 0 ? '+' : ''}${r.pm ?? 0}</td>
+    </tr>`;
+  }).join('');
+
+  return `<h2>今季の試合</h2>${sum}
+    <div class="wrap"><table class="career loggame">
+      <thead><tr><th class="n">日付</th><th>対戦</th><th class="n">結果</th>
+        <th class="n">先発</th><th class="n">MP</th><th class="n">PTS</th>
+        <th class="n">REB</th><th class="n">AST</th><th class="n">FG</th>
+        <th class="n">3P</th><th class="n">FT</th><th class="n">STL</th>
+        <th class="n">BLK</th><th class="n">TOV</th><th class="n">PF</th>
+        <th class="n">+/-</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table></div>
+    <p class="sub">新しい順。<strong>出場した試合だけ</strong>で、DNP と欠場は
+      入らない。対戦を押すとその試合のページへ飛ぶ。</p>`;
 }
 
 /* --------------------------------------------------- 出場時間の分布 */
