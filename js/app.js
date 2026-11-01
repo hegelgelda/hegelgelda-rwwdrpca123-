@@ -407,10 +407,12 @@ async function renderMarket() {
       > 2 * Math.sqrt(c.pred * (1 - c.pred) / c.n) ? 'warnv' : 'dim'}">${
       pm((c.act - c.pred) * 100, 1)}pt</td></tr>`).join('');
 
-  /* 外れの大きかった試合。市場の勝率が低いほうが勝った順 */
+  /* 外れの大きかった試合。勝ったほうの事前確率が低い順。
+     ★ `k_ml` は**ホームの**勝率。アウェイが勝った試合は 100 から引く
+       （最初ここを逆にして、番狂わせが 72.5% と出ていた） */
   const miss = rows.filter((g) => g.k_ml !== undefined && g.k_ml !== null)
-    .map((g) => ({ g, s: (g.hp > g.ap ? 100 - g.k_ml : g.k_ml) }))
-    .sort((x, z) => z.s - x.s).slice(0, 8)
+    .map((g) => ({ g, s: (g.hp > g.ap ? g.k_ml : 100 - g.k_ml) }))
+    .sort((x, z) => x.s - z.s).slice(0, 8)
     .map(({ g, s }) => `<tr>
       <td class="n">${esc(g.d.slice(5).replace('-', '/'))}</td>
       <td><a href="#/game/${esc(g.id)}">${esc(g.a)} @ ${esc(g.h)}</a></td>

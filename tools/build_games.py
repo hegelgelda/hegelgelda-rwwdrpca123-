@@ -602,6 +602,35 @@ def main() -> None:
     con.close()
 
     index.sort(key=lambda x: (x["d"], x["id"]))
+    # ---------------------------------------------- 市場の事後検証
+    # ★ 終値は**各ソースのティップに一番近い点**を使う。`close` をそのまま
+    #   使ってはいけない（book を優先するが、book の最終点は数時間前のことが
+    #   ある）。何分前の値かも一緒に出して、画面で断りを入れる。
+    mk = []
+    for row in index:
+        ser = (odds.get(row["id"]) or {}).get("series") or {}
+        if not ser or row["ap"] is None or row["hp"] is None:
+            continue
+        rec = {"id": row["id"], "d": row["d"], "a": row["a"], "h": row["h"],
+               "ap": row["ap"], "hp": row["hp"]}
+        got = False
+        for key, short in (("ml", "ml"), ("spread", "sp"), ("total", "tt")):
+            for src, tag in (("kalshi", "k"), ("book", "b")):
+                pts = (ser.get(key) or {}).get(src) or []
+                if not pts:
+                    continue
+                x, y = pts[-1]
+                rec["%s_%s" % (tag, short)] = y
+                rec["%s_%s_m" % (tag, short)] = int(round(-x))
+                got = True
+        if got:
+            mk.append(rec)
+    with open(OUT / "market.json", "w", encoding="utf-8") as f:
+        json.dump({"season": SEASON, "games": mk}, f,
+                  ensure_ascii=False, separators=(",", ":"))
+    print("市場: %d 試合 -> %s"
+          % (len(mk), (OUT / "market.json").name))
+
     with open(OUT / "games_index.json", "w", encoding="utf-8") as f:
         json.dump({"season": a.season, "games": index}, f,
                   ensure_ascii=False, separators=(",", ":"))
