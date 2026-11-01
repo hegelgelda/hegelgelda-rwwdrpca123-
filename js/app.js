@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '3b921dd9';
+const DATA_V = 'd1c2af52';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -898,6 +898,9 @@ async function renderTeams() {
 async function renderTeam(tri, tab) {
   const [teams, rost, sc] = await Promise.all(
     [load('teams'), load('rosters'), load('schedule')]);
+  /* チームのシーズン指標。無くてもページは出す */
+  let ts = null;
+  try { ts = await load('team_stats'); } catch (e) { ts = null; }
   /* 今季の成績。順位表と同じ JSON から引く（無くてもページは出す） */
   let me = null;
   try {
@@ -909,7 +912,8 @@ async function renderTeam(tri, tab) {
 
   const players = rost.teams[tri] || [];
   const games = sc.games.filter((g) => g.h === tri || g.a === tri);
-  const cur = tab === 'schedule' ? 'schedule' : 'roster';
+  const TABS = ['roster', 'schedule', 'stats'];
+  const cur = TABS.includes(tab) ? tab : 'roster';
 
   view.innerHTML = `
     <div class="teamhead">
@@ -940,13 +944,106 @@ async function renderTeam(tri, tab) {
         ロスター（${players.length}）</button>
       <button data-t="schedule" class="${cur === 'schedule' ? 'on' : ''}">
         日程（${games.length}）</button>
+      ${ts && ts.cur[tri] ? `<button data-t="stats"
+        class="${cur === 'stats' ? 'on' : ''}">シーズン成績</button>` : ''}
     </div>
-    <div id="pane">${cur === 'roster'
-      ? rosterTable(players, rost.prev) : teamSchedule(games, tri)}</div>`;
+    <div id="pane">${cur === 'roster' ? rosterTable(players, rost.prev)
+      : cur === 'stats' ? teamStats(ts, tri) : teamSchedule(games, tri)}</div>`;
 
   view.querySelectorAll('.tabs button').forEach((b) => {
     b.onclick = () => go(`#/team/${tri}/${b.dataset.t}`);
   });
+}
+
+/* ------------------------------------------------- チームのシーズン成績
+
+   指標の定義（並び・書式・良し悪しの向き）は `team_stats.json` の `metrics`
+   が持っている。ここは描くだけ。増減は `build_page1.py` の TEAM_METRICS を
+   直せば両方に効く。
+
+   ★ 列の見出しは「攻撃 / 守備」。`DREB%` は相手に許した値ではなく自軍の
+     守備リバウンド率、`TOV/100` の守備側は**奪った**数なので、
+     「被」と書くと嘘になる。 */
+
+function fmtM(v, f) {
+  if (v === undefined || v === null) return '<span class="dim">—</span>';
+  if (f === 'p') return (v * 100).toFixed(1) + '%';
+  if (f === 0) return Math.round(v).toLocaleString();
+  return v.toFixed(1);
+}
+
+/* 順位の色。1-10 を良い側、21-30 を悪い側に寄せる。
+   向き 0（良し悪しが無い指標）は色を付けない */
+function rkCell(rk, n, dir) {
+  if (rk === undefined || rk === null) return '';
+  let c = 'dim';
+  if (dir) c = rk <= 10 ? 'up' : rk >= n - 9 ? 'down' : 'dim';
+  return `<span class="rk ${c}">${rk}</span>`;
+}
+
+function teamStats(ts, tri) {
+  const c = ts.cur[tri];
+  const n = ts.n || 30;
+  const hist = ts.hist[tri] || [];
+  if (!c) return `<p class="empty">今季の成績がまだ無い。</p>`;
+
+  const groups = ts.metrics.map((g) => `
+    <tbody class="grp"><tr><th colspan="5">${esc(g.group)}</th></tr></tbody>
+    <tbody>${g.rows.map((r) => `<tr>
+      <td class="lbl">${esc(r.label)}</td>
+      <td class="n">${fmtM(c[r.a], r.f)}</td>
+      <td class="n">${rkCell(c.rk[r.a], n, r.da)}</td>
+      <td class="n">${r.b ? fmtM(c[r.b], r.f) : ''}</td>
+      <td class="n">${r.b ? rkCell(c.rk[r.b], n, r.db) : ''}</td>
+    </tr>`).join('')}</tbody>`).join('');
+
+  return `
+    <h2>今季の指標<span class="hdrsub">${esc(ts.season)} / ${c.g} 試合</span></h2>
+    <p class="sub">数字の右の小さい数は<strong>リーグ 30 チーム中の順位</strong>。
+      <span class="rk up">緑</span> が上位 10、<span class="rk down">赤</span> が下位 10。
+      ペースや 3PA 率のように良し悪しが決まらない指標には色を付けていない。
+      率は<strong>カウントから直に</strong>出している（試合ごとの率の平均ではない）。
+      ORtg / DRtg だけ<strong>ポゼッションで重み付け</strong>した加重平均。</p>
+    <div class="wrap"><table class="tstat">
+      <thead><tr><th>指標</th><th class="n">攻撃</th><th class="n">順</th>
+        <th class="n">守備</th><th class="n">順</th></tr></thead>
+      ${groups}
+    </table></div>
+
+    <h2>シーズン別<span class="hdrsub">レギュラーシーズン</span></h2>
+    <div class="wrap"><table class="career">
+      <thead><tr><th>シーズン</th><th class="n">試合</th><th class="n">勝敗</th>
+        <th class="n">勝率</th><th class="n">conf</th>
+        <th class="n">得点</th><th class="n">失点</th><th class="n">差</th>
+        <th class="n">ORtg</th><th class="n">DRtg</th><th class="n">Net</th>
+        <th class="n">ペース</th><th class="n">eFG%</th><th class="n">被eFG%</th>
+        <th class="n">3PA率</th></tr></thead>
+      <tbody>${hist.map((h) => `<tr class="${
+        h.season === ts.season ? 'nowrow' : ''}">
+        <td>${esc(h.season)}</td>
+        <td class="n dim">${h.g}</td>
+        <td class="n">${h.w}-${h.l}</td>
+        <td class="n">${h.pct === null ? '—'
+          : h.pct.toFixed(3).replace(/^0/, '')}</td>
+        <td class="n dim">${h.rk_conf ?? '—'}</td>
+        <td class="n">${num(h.pf)}</td>
+        <td class="n">${num(h.pa)}</td>
+        <td class="n ${h.diff > 0 ? 'up' : 'down'}">${
+          h.diff > 0 ? '+' : ''}${num(h.diff)}</td>
+        <td class="n">${num(h.ortg)}</td>
+        <td class="n">${num(h.drtg)}</td>
+        <td class="n ${h.net > 0 ? 'up' : 'down'}">${
+          h.net > 0 ? '+' : ''}${num(h.net)}</td>
+        <td class="n dim">${num(h.pace)}</td>
+        <td class="n">${fmtM(h.efg, 'p')}</td>
+        <td class="n">${fmtM(h.efg_op, 'p')}</td>
+        <td class="n dim">${fmtM(h.tpa_rate, 'p')}</td>
+      </tr>`).join('')}</tbody>
+    </table></div>
+    <p class="sub">conf はカンファレンス内の順位（勝率順。<strong>この表から
+      計算している</strong>。派生表は進行中の季に追いついていないので使っていない）。
+      今季の行は<strong>途中の値</strong>で、試合数が少ないので大きく動く。
+      得点の内訳とトラッキングは今季ぶんだけ上の表に出している。</p>`;
 }
 
 function rosterTable(ps, prev) {

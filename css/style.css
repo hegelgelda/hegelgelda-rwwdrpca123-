@@ -823,3 +823,20 @@ table.vstab .at { color: var(--line); margin: 0 3px; }
   margin-left: 5px; font-size: 10px; padding: 0 5px; border-radius: 999px;
   background: var(--accent-soft); color: var(--accent);
 }
+
+/* チームのシーズン指標 */
+table.tstat { font-size: 13px; }
+table.tstat td, table.tstat th { padding: 5px 8px; }
+table.tstat td.lbl { white-space: nowrap; }
+table.tstat tbody.grp th {
+  text-align: left; font-size: 12px; letter-spacing: .04em;
+  color: var(--muted); background: var(--panel);
+  border-top: 1px solid var(--line); padding-top: 10px;
+}
+table.tstat .rk {
+  font-family: var(--mono); font-size: 11px; padding: 1px 5px;
+  border-radius: 4px; background: var(--panel);
+}
+table.tstat .rk.up { color: var(--accent); }
+table.tstat .rk.down { color: var(--warn); }
+table.career tr.nowrow td { background: var(--panel); font-weight: 600; }

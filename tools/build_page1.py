@@ -54,6 +54,258 @@ def clean(v):
     return v
 
 
+# ----------------------------------------------- チームのシーズン指標
+
+# 指標の定義は**ここ 1 か所**。画面はこれを読んで描くだけにする。
+#   a   **攻撃**側の列
+#   b   **守備**側の列。無ければ省略
+#   f   書式  1=小数1桁 / 0=整数 / p=百分率（0〜1 を %1桁に）
+#   da  a の向き  1=大きいほど良い / -1=小さいほど良い / 0=良し悪しなし
+#   db  b の向き
+# ★ 列の見出しは「自チーム / 被」ではなく **「攻撃 / 守備」**。
+#   `dreb_pct` は相手に許した値ではなく**自軍の守備リバウンド率**、
+#   `tovr_op` は**奪ったターンオーバー**なので、「被」と書くと嘘になる。
+# ★ 攻守で対になっていない指標を同じ行に並べないこと。
+#   最初は `cfga_rate`（自軍の試投のうちコンテストされた割合）と
+#   `rim_pct`（リムで守った被 FG%）を 1 行にしてしまい、
+#   無関係な 2 つが「攻撃 / 守備」に見えていた。
+TEAM_METRICS = [
+    ("得点効率", [
+        ("得点 / 失点（1 試合）", "pf", "pa", 1, 1, -1),
+        ("ORtg / DRtg（100 poss）", "ortg", "drtg", 1, 1, -1),
+        ("Net", "net", None, 1, 1, 0),
+        ("ペース（1 試合の poss）", "pace", None, 1, 0, 0),
+    ]),
+    ("四大要素", [
+        ("eFG%", "efg", "efg_op", "p", 1, -1),
+        ("TOV / 100 poss", "tovr", "tovr_op", 1, -1, 1),
+        ("OREB% / DREB%", "oreb_pct", "dreb_pct", 1, 1, 1),
+        ("FT 試投率（FTA/FGA）", "ftr", "ftr_op", "p", 1, -1),
+    ]),
+    ("シュート", [
+        ("FG%", "fg", "fg_op", "p", 1, -1),
+        ("3P%", "tp", "tp_op", "p", 1, -1),
+        ("3PA 率（3PA/FGA）", "tpa_rate", "tpa_rate_op", "p", 0, 0),
+        ("FT%", "ft", None, "p", 1, 0),
+        ("TS%", "ts", None, "p", 1, 0),
+    ]),
+    ("得点の内訳（1 試合）", [
+        ("ペイント内", "pip", "pip_op", 1, 1, -1),
+        ("セカンドチャンス", "psc", "psc_op", 1, 1, -1),
+        ("速攻", "pfb", "pfb_op", 1, 1, -1),
+        ("ターンオーバーから", "pft", "pft_op", 1, 1, -1),
+        ("ベンチ", "bp", "bp_op", 1, 0, 0),
+    ]),
+    ("カウント（1 試合）", [
+        ("リバウンド", "reb", "reb_op", 1, 1, -1),
+        ("アシスト", "ast", "ast_op", 1, 1, -1),
+        ("ターンオーバー", "tov", "tov_op", 1, -1, 1),
+        ("スティール", "stl", None, 1, 1, 0),
+        ("ブロック", "blk", None, 1, 1, 0),
+        ("ファウル", "pf_n", None, 1, -1, 0),
+    ]),
+    ("トラッキング（1 試合）", [
+        ("走行距離（マイル・チーム計）", "dist", None, 1, 0, 0),
+        ("タッチ", "touches", None, 0, 0, 0),
+        ("パス", "passes", None, 0, 0, 0),
+        ("コンテストされた FGA 率（自軍の試投）", "cfga_rate", None, "p", 0, 0),
+        ("リムで守った被 FG%", "rim_pct", None, "p", -1, 0),
+        ("リムで守った被 FGA", "rim_a", None, 1, 0, 0),
+    ]),
+]
+
+TEAM_SQL = """
+with box as (
+  select game_id, team_abbreviation as tri,
+         sum(pts) pts, sum(fgm) fgm, sum(fga) fga, sum(fg3m) fg3m, sum(fg3a) fg3a,
+         sum(ftm) ftm, sum(fta) fta, sum(oreb) oreb, sum(dreb) dreb, sum(reb) reb,
+         sum(ast) ast, sum(tov) tov, sum(stl) stl, sum(blk) blk, sum(pf) pf
+  from player_game_base
+  where season_type = 'Regular Season'
+  group by 1, 2),
+oth as (
+  select game_id, team_tricode as tri,
+         points_in_the_paint pip, points_second_chance psc,
+         points_fast_break pfb, points_from_turnovers pft, bench_points bp
+  from game_other_stats),
+trk as (
+  select distinct game_id, team_tricode as tri, distance, touches, passes,
+         contested_field_goals_attempted cfga,
+         defended_at_rim_field_goals_attempted rim_a,
+         defended_at_rim_field_goals_made rim_m
+  from team_track)
+select a.season_year season, a.team_abbreviation tri, a.wl, a.poss,
+       a.off_rating, a.def_rating, a.pace, a.oreb_pct, a.dreb_pct,
+       b.pts, b.fgm, b.fga, b.fg3m, b.fg3a, b.ftm, b.fta, b.reb,
+       b.ast, b.tov, b.stl, b.blk, b.pf pf_n,
+       ob.pts pts_op, ob.fgm fgm_op, ob.fga fga_op, ob.fg3m fg3m_op,
+       ob.fg3a fg3a_op, ob.fta fta_op, ob.reb reb_op, ob.ast ast_op, ob.tov tov_op,
+       o.pip, o.psc, o.pfb, o.pft, o.bp,
+       oo.pip pip_op, oo.psc psc_op, oo.pfb pfb_op, oo.pft pft_op, oo.bp bp_op,
+       t.distance, t.touches, t.passes, t.cfga, t.rim_a, t.rim_m
+from team_game_adv a
+join box  b  on b.game_id = a.game_id and b.tri = a.team_abbreviation
+join box  ob on ob.game_id = a.game_id and ob.tri <> a.team_abbreviation
+left join oth o  on o.game_id = a.game_id and o.tri = a.team_abbreviation
+left join oth oo on oo.game_id = a.game_id and oo.tri <> a.team_abbreviation
+left join trk t  on t.game_id = a.game_id and t.tri = a.team_abbreviation
+where a.season_type = 'Regular Season'
+"""
+
+
+def _ratio(num, den):
+    """0 除算と欠損を潰す。"""
+    if den is None or num is None or den != den or num != num or den == 0:
+        return None
+    return num / den
+
+
+def _season_metrics(rows):
+    """チーム 1 季ぶんのチーム試合の行から指標をまとめる。
+
+    ★ 合計は「その列が埋まっている行だけ」で取る。`game_other_stats` は
+      全期間で 80 試合ぶん欠けているので、null を 0 で足すと平均が下がる。
+    """
+    k = len(rows)
+
+    def tot(c):
+        v = [r[c] for r in rows if r.get(c) is not None and r[c] == r[c]]
+        return (sum(v), len(v)) if v else (None, 0)
+
+    def avg(c):
+        sm, n = tot(c)
+        return _ratio(sm, n)
+
+    poss = tot("poss")[0] or 1
+    wmean = {}
+    for c in ("off_rating", "def_rating", "oreb_pct", "dreb_pct"):
+        wmean[c] = _ratio(sum((r[c] or 0) * (r["poss"] or 0) for r in rows), poss)
+    S = {c: tot(c)[0] for c in
+         ("pts", "fgm", "fga", "fg3m", "fg3a", "ftm", "fta", "reb", "ast", "tov",
+          "stl", "blk", "pf_n", "pts_op", "fgm_op", "fga_op", "fg3m_op", "fg3a_op",
+          "fta_op", "reb_op", "ast_op", "tov_op", "cfga", "rim_a", "rim_m")}
+
+    m = {
+        "g": k,
+        "w": sum(1 for r in rows if r["wl"] == "W"),
+        "pf": _ratio(S["pts"], k), "pa": _ratio(S["pts_op"], k),
+        "ortg": wmean["off_rating"], "drtg": wmean["def_rating"],
+        "pace": avg("pace"),
+        "oreb_pct": None if wmean["oreb_pct"] is None else 100 * wmean["oreb_pct"],
+        "dreb_pct": None if wmean["dreb_pct"] is None else 100 * wmean["dreb_pct"],
+        "efg": _ratio(S["fgm"] + 0.5 * S["fg3m"], S["fga"]),
+        "efg_op": _ratio(S["fgm_op"] + 0.5 * S["fg3m_op"], S["fga_op"]),
+        "ts": _ratio(S["pts"], 2 * (S["fga"] + 0.44 * S["fta"])),
+        "tovr": _ratio(100 * S["tov"], poss),
+        "tovr_op": _ratio(100 * S["tov_op"], poss),
+        "ftr": _ratio(S["fta"], S["fga"]),
+        "ftr_op": _ratio(S["fta_op"], S["fga_op"]),
+        "fg": _ratio(S["fgm"], S["fga"]), "fg_op": _ratio(S["fgm_op"], S["fga_op"]),
+        "tp": _ratio(S["fg3m"], S["fg3a"]), "tp_op": _ratio(S["fg3m_op"], S["fg3a_op"]),
+        "tpa_rate": _ratio(S["fg3a"], S["fga"]),
+        "tpa_rate_op": _ratio(S["fg3a_op"], S["fga_op"]),
+        "ft": _ratio(S["ftm"], S["fta"]),
+        "cfga_rate": _ratio(S["cfga"], S["fga"]),
+        "rim_pct": _ratio(S["rim_m"], S["rim_a"]),
+    }
+    m["l"] = k - m["w"]
+    m["pct"] = _ratio(m["w"], k)
+    m["net"] = (None if m["ortg"] is None or m["drtg"] is None
+                else m["ortg"] - m["drtg"])
+    m["diff"] = (None if m["pf"] is None or m["pa"] is None else m["pf"] - m["pa"])
+    for c in ("reb", "ast", "tov", "stl", "blk", "pf_n",
+              "reb_op", "ast_op", "tov_op",
+              "pip", "psc", "pfb", "pft", "bp",
+              "pip_op", "psc_op", "pfb_op", "pft_op", "bp_op",
+              "distance", "touches", "passes", "rim_a"):
+        m[{"distance": "dist"}.get(c, c)] = avg(c)
+    return m
+
+
+def team_stats(con):
+    """`team_stats.json` を作る。今季の指標（リーグ順位つき）＋ 季別の成績。"""
+    df = con.execute(q(TEAM_SQL)).df()
+    df = df.astype(object).where(df.notna(), None)
+    rows = df.to_dict("records")
+    dim = con.execute(q(
+        "select tri, conference from team_dim")).df().set_index("tri")["conference"]
+    dim = dim.to_dict()
+
+    by = {}
+    for r in rows:
+        by.setdefault((r["season"], r["tri"]), []).append(r)
+    agg = {ks: _season_metrics(v) for ks, v in by.items()}
+
+    # ---- 季別。カンファレンス内の順位もここで出す（派生表は使わない）
+    hist = {}
+    for (season, tri), m in agg.items():
+        hist.setdefault(tri, []).append(dict(m, season=season))
+    for season in {k[0] for k in agg}:
+        for conf in set(dim.values()):
+            side = [(tri, agg[(season, tri)]) for (s, tri) in agg
+                    if s == season and dim.get(tri) == conf]
+            side.sort(key=lambda x: (-(x[1]["pct"] or 0), -x[1]["w"]))
+            for i, (tri, m) in enumerate(side, 1):
+                for h in hist[tri]:
+                    if h["season"] == season:
+                        h["rk_conf"] = i
+    for tri in hist:
+        hist[tri].sort(key=lambda h: h["season"], reverse=True)
+
+    # ---- 今季。指標ごとにリーグ順位を付ける
+    cur = {tri: agg[(SEASON, tri)] for (s, tri) in agg if s == SEASON}
+    keys = []
+    for _, items in TEAM_METRICS:
+        for it in items:
+            keys += [it[1]] + ([it[2]] if it[2] else [])
+    keys += ["net", "diff", "pct"]
+    rk = {tri: {} for tri in cur}
+    for key in dict.fromkeys(keys):
+        dirs = {}
+        for _, items in TEAM_METRICS:
+            for it in items:
+                if it[1] == key:
+                    dirs[key] = it[4]
+                if it[2] == key:
+                    dirs[key] = it[5]
+        d = dirs.get(key, 1) or 1          # 向きなしは「大きい順」で並べる
+        have = [(tri, cur[tri].get(key)) for tri in cur
+                if cur[tri].get(key) is not None]
+        have.sort(key=lambda x: x[1] * (-1 if d > 0 else 1))
+        for i, (tri, _) in enumerate(have, 1):
+            rk[tri][key] = i
+
+    out_cur = {}
+    for tri, m in cur.items():
+        o = {k2: (r1(v, 3) if isinstance(v, float) and abs(v) < 2 else r1(v, 1))
+             for k2, v in m.items() if v is not None}
+        o["w"], o["l"], o["g"] = m["w"], m["l"], m["g"]
+        o["rk"] = rk[tri]
+        out_cur[tri] = o
+
+    out_hist = {}
+    for tri, hs in hist.items():
+        out_hist[tri] = [{
+            "season": h["season"], "g": h["g"], "w": h["w"], "l": h["l"],
+            "pct": r1(h["pct"], 3), "rk_conf": h.get("rk_conf"),
+            "pf": r1(h["pf"]), "pa": r1(h["pa"]), "diff": r1(h["diff"]),
+            "ortg": r1(h["ortg"]), "drtg": r1(h["drtg"]), "net": r1(h["net"]),
+            "pace": r1(h["pace"]), "efg": r1(h["efg"], 3),
+            "efg_op": r1(h["efg_op"], 3), "tpa_rate": r1(h["tpa_rate"], 3),
+        } for h in hs]
+
+    return {
+        "season": SEASON,
+        "n": len(out_cur),
+        "metrics": [{"group": g, "rows": [
+            {"label": it[0], "a": it[1], "b": it[2], "f": it[3],
+             "da": it[4], "db": it[5]} for it in items]}
+            for g, items in TEAM_METRICS],
+        "cur": out_cur,
+        "hist": out_hist,
+    }
+
+
 def r1(v, dig=1):
     """None と NaN を潰して丸める。
 
@@ -257,6 +509,23 @@ def main() -> None:
         })
     else:
         tot += keep(a.out, "standings.json")
+
+    # ------------------------------------------------- チームのシーズン指標
+    # ★ `team_season_summary` は使わない。`build_team_dim.py` が作る派生表で
+    #   2025-26 止まり（`team_standings_daily` と同じ）。全部ここで組む。
+    # ★ 率はカウントから直に出す。試合ごとの率の単純平均ではない
+    #   （ペースの違う試合が同じ重みになる）。レーティングだけは
+    #   ポゼッション重みの加重平均。
+    # ★ 相手側の値は同じ game_id の相手の行から取る。`def_rating` は
+    #   相手の `off_rating` の写しなので、守備の指標はこれで一貫する。
+    # ★ `team_track` は **distinct が必要**。`_fetch_log` の索引の不具合で
+    #   同じ試合が 3 重に入っている（2026-11-02 時点で今季 12 行）。
+    #   `speed` は全行 null なので出さない。
+    if (has_table(con, "team_game_adv") and has_table(con, "player_game_base")
+            and has_table(con, "team_dim")):
+        tot += write(a.out, "team_stats.json", team_stats(con))
+    else:
+        tot += keep(a.out, "team_stats.json")
 
     # --------------------------------------------------- 今季の選手一覧
     # 並べ替えできる 1 枚の表にする。選手ページの JSON は 1 人 1 ファイルで、
