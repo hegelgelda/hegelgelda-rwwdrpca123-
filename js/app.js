@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '2863f465';
+const DATA_V = '99216b5e';
 const view = document.getElementById('view');
 
 /* 読んだ JSON を覚えておく。同じものを2度取りにいかない */
@@ -346,7 +346,8 @@ function notesImport(obj) {
 
 /* ★ 下の `<code>` の中は `\` で書く。テンプレート文字列なので `
 ` と
-   `` はそのままだと改行と復帰になり「C: ba eports...」と出る。
+   `
+` はそのままだと改行と復帰になり「C: ba eports...」と出る。
    ★ ここに HTML コメントで説明を書かないこと。コメントの中にバッククォートを
    入れるとテンプレート文字列がそこで閉じて、ページ全体が落ちる（実際に落ちた）。 */
 async function renderNotes() {
