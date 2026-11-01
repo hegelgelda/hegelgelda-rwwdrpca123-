@@ -20,6 +20,9 @@ import os
 import shutil
 from datetime import datetime, timezone
 
+# build_games.py が VPS から引いてきた試合別の injury（選手別に並べ替えて使う）
+INJ_LOCAL = os.environ.get("NBA_INJURY_JSON") or r"C:\nba\reports\injury_games.json"
+
 import duckdb
 
 import ddi as ddi_mod
@@ -252,6 +255,54 @@ def main() -> None:
     print("今季の試合ログ %d 名 / %d 行"
           % (len(log_by), sum(len(v) for v in log_by.values())))
 
+    # ------------------------------------------------ 今季の injury report
+    # ★ `build_games.py` が VPS から引いてきた試合別の JSON を、選手別に
+    #   並べ替えるだけ。VPS をもう一度叩かない（だから site の段では
+    #   build_games を先に回す）。
+    # ★ `person_id` は nba.duckdb の `player_id` と同じ。非空の氏名では
+    #   99.8% 埋まっている（2026-11 実測。残りは1名）。
+    inj_by: dict[int, list] = {}
+    try:
+        with open(INJ_LOCAL, encoding="utf-8") as f:
+            inj_src = json.load(f).get("games", {})
+    except Exception as e:
+        inj_src = {}
+        print("  [warn] injury_games.json を読めない: %s" % str(e)[:80])
+
+    def _hours(iso_s, tip):
+        if not iso_s or not tip:
+            return None
+        t = datetime.fromisoformat(iso_s)
+        return round((tip - t).total_seconds() / 3600.0, 1)
+
+    n_noid = 0
+    for gid, g in inj_src.items():
+        tip = g.get("tip_utc")
+        tip = datetime.fromisoformat(tip) if tip else None
+        mu = (g.get("matchup") or "").split("@")
+        for p in g.get("players", []):
+            pid = p.get("pid")
+            if not pid:
+                n_noid += 1
+                continue
+            tri = p.get("tri")
+            opp = None
+            if len(mu) == 2:
+                opp = mu[1] if mu[0] == tri else mu[0]
+            inj_by.setdefault(int(pid), []).append({
+                "g": gid, "d": g.get("date"), "o": opp,
+                "h": 1 if (len(mu) == 2 and mu[1] == tri) else 0,
+                "first": p.get("first"), "final": p.get("final"),
+                "reason": p.get("reason"),
+                "fh": _hours(p.get("first_slot"), tip),
+                "lh": _hours(p.get("last_slot"), tip),
+            })
+    for v in inj_by.values():
+        v.sort(key=lambda x: x["d"] or "", reverse=True)
+    print("injury 履歴 %d 名 / %d 行%s"
+          % (len(inj_by), sum(len(v) for v in inj_by.values()),
+             "（person_id 無しで落とした %d 行）" % n_noid if n_noid else ""))
+
     n_file = n_byte = 0
     for pid, grp in rows.groupby("player_id", sort=False):
         seasons, career, recent = [], {}, {}
@@ -283,6 +334,7 @@ def main() -> None:
             "d3": f"{DIST3[0]} 〜 {DIST3[1]}",
             "season": SEASON,
             "log": log_by.get(int(pid)),
+            "inj": inj_by.get(int(pid)),
         }
         p = os.path.join(pdir, f"{pid}.json")
         with open(p, "w", encoding="utf-8") as f:
