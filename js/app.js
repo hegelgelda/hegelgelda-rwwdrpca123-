@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '8853f9fb';
+const DATA_V = 'b4525e18';
 const view = document.getElementById('view');
 
 /* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
@@ -293,7 +293,20 @@ function gameRow(g) {
     ? `<span class="badge">OT${r.np - 4 > 1 ? r.np - 4 : ''}</span>` : '';
   /* まだの試合にはモデルの予想を添える。`pred` はホーム基準の得点差 */
   const mp = done ? null : ((MODEL && MODEL.games) || {})[g.game_id];
-  const mpred = !mp ? '' : (() => {
+  /* ★ 今季このカードが何回目か（schedule.json の `sn` / `sc`）。
+       **日程の行だけ**に出す。終わった試合には出さない（勝率の右隣という
+       位置なので、対象は「これからの対戦」に限る）。
+     ★ `sc` は確定ぶんだけの分母。NBA Cup のノックアウトが 12 月に
+       追加されると増えるので、「最後の対戦」と読ませる文言にはしない */
+  const sn = (done || !g.sn) ? '' : `<span class="sn" title="今季の対戦 ${
+    g.sc} 試合のうち ${g.sn} 戦目">${g.sn}戦目</span>`;
+  /* ★ `pred` / `p` が欠けた予測は**この行だけ**落とす。
+       以前は `p.toFixed()` が例外になり、1 試合の欠けで日程のページが
+       丸ごと白くなった（2026-11-02。σ が NaN で p_home が null になった）。
+       書き出し側（build_page1.py）でも落としているが、ここでも守る */
+  const ok = mp && mp.pred !== null && mp.pred !== undefined
+                && mp.p !== null && mp.p !== undefined;
+  const mpred = !ok ? '' : (() => {
     const homeFav = mp.pred >= 0;
     const tri = homeFav ? g.h : g.a;
     const pts = Math.abs(mp.pred).toFixed(1);
@@ -302,7 +315,7 @@ function gameRow(g) {
     return `<span class="mpred" title="${mp.av
         ? '段階1 の予測（injury report を織り込み済み）'
         : '段階1 の予測。この試合の injury report はまだ出ていない'}"
-      >${esc(tri)} −${pts}<span class="pp">${p.toFixed(0)}%</span>${
+      >${esc(tri)} −${pts}<span class="pp">${p.toFixed(0)}%</span>${sn}${
       mp.av ? '<span class="avok" title="欠場を織り込み済み">injury</span>' : ''
       }</span>`;
   })();
@@ -337,7 +350,7 @@ function gameRow(g) {
     <div class="match">
       ${match}
       ${g.label ? `<span class="badge">${esc(g.label)}</span>` : ''}
-      ${mpred}
+      ${mpred || sn}
       ${bookLink(g.d, g.a, g.h)}
     </div>
     <div class="meta">

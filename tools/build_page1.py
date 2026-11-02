@@ -405,6 +405,14 @@ def main() -> None:
     #   ET→JST は +13h(EDT) と +14h(EST) で切り替わるので、
     #   ブラウザ側で足し算せず、ここで tip_utc を Asia/Tokyo に落として渡す。
     #   `tjo` は ET の試合日から見た JST の日付のずれ（ほぼ常に +1）。
+    # ★ `sn` / `sc` は「今季このカードが何回目 / 全部で何試合か」。
+    #   組は **順序なし**（least/greatest）で作る。ホームとアウェイが
+    #   入れ替わるので `a || h` で組にすると同じカードが2組に割れる。
+    #   窓関数は WHERE のあとに評価されるので、TBD（team_id = 0）や
+    #   プレシーズンは分母に入らない。
+    # ★ `sc` は確定ぶんだけの数。2026-27 は NBA Cup のノックアウト 24 試合が
+    #   12月に追加されるので、**それまでは 3/4 が 3/3 に見えるカードがある**。
+    #   日程を取り直してこれを回せば直る（`update_season.py` の schedule → site）。
     s = con.execute(q(f"""
         select game_id,
                strftime(game_date, '%Y-%m-%d') as d,
@@ -415,11 +423,18 @@ def main() -> None:
                away_tri as a, home_tri as h,
                arena_name as arena, arena_city as city,
                national_tv as tv, game_label as label,
-               game_status as st
+               game_status as st,
+               row_number() over w  as sn,
+               count(*)     over w2 as sc
         from game_schedule
         where season = '{SEASON}'
           and substr(game_id, 3, 1) = '2'
           and home_team_id <> 0 and away_team_id <> 0
+        window w as (partition by least(away_tri, home_tri),
+                                  greatest(away_tri, home_tri)
+                     order by game_date, tip_et),
+               w2 as (partition by least(away_tri, home_tri),
+                                   greatest(away_tri, home_tri))
         order by game_date, tip_et""")).df()
     s = s.astype(object).where(s.notna(), None)
     tot += write(a.out, "schedule.json", {
@@ -609,6 +624,16 @@ def main() -> None:
             join (select game_id, max(as_of_utc) as t from stage1_future
                   group by 1) m
               on m.game_id = f.game_id and m.t = f.as_of_utc""").df()
+        # ★ 予想得点差か勝率が null の予測は捨てる。
+        #   `predict_upcoming.py` の σ が NaN になると p_home が null で
+        #   保存され、画面は `p.toFixed()` で落ちる（**日程のページが
+        #   丸ごと白くなる**）。2026-11-02 の 15 試合で実際にそうなった。
+        #   ここで落として、落としたことを必ず印字する。
+        nn = pr[pr.pred.isna() | pr.p_home.isna()]
+        if len(nn):
+            print("  ★ model.json: 予測が欠けた %d 試合を落とした（%s）"
+                  % (len(nn), ", ".join(nn.game_id.head(3))))
+            pr = pr[~(pr.pred.isna() | pr.p_home.isna())].copy()
         games = {}
         for x in pr.to_dict("records"):
             games[x["game_id"]] = {

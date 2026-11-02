@@ -805,6 +805,14 @@ table.injlog .hb { display: block; font-size: 11px; color: var(--muted);
 }
 .mpred .pp { margin-left: 5px; color: var(--accent); }
 
+/* 今季このカードが何回目か。勝率の右隣。予測が無い試合では単独で出る */
+.sn {
+  font-family: var(--mono); font-size: 11px; white-space: nowrap;
+  margin-left: 6px; padding: 0 5px; border-radius: 4px;
+  background: var(--panel); color: var(--muted);
+}
+.match > .sn { margin-left: 10px; }
+
 /* モデルのレーティング表 */
 table.rate { font-size: 13px; white-space: nowrap; }
 table.rate td, table.rate th { padding: 6px 8px; }
