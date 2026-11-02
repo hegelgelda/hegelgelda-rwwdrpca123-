@@ -638,16 +638,6 @@ table.injtab .hb {
 }
 #noteform button:hover { background: var(--accent); color: #04060c; }
 
-/* polymarket の板グラフへの入口（オッズ枠の余白に置く） */
-.vizrow { margin: 12px 0 0; }
-a.vizbtn {
-  display: inline-block; font-size: 13px; font-weight: 600;
-  padding: 7px 16px; border-radius: 999px;
-  color: var(--accent); background: var(--accent-soft);
-  border: 1px solid var(--accent);
-}
-a.vizbtn:hover { background: var(--accent); color: #04060c; text-decoration: none; }
-
 @media (max-width: 900px) {
   .sidebyside .note .notebox { min-height: 0; }
   .sidebyside .note .noteinner { position: static; }

@@ -2304,9 +2304,6 @@ async function renderGame(gid) {
           <div id="oddswrap"></div>`
           : `<p class="empty">この試合のオッズは無い。収集を始めたのが
              2026-10-23 なので、それより前の試合には記録がない。</p>`}
-        ${g.viz ? `<p class="vizrow"><a class="vizbtn" target="_blank"
-            rel="noopener" href="${DATA}/viz/${esc(g.game_id)}.webp"
-            >polymarket の板グラフを開く ↗</a></p>` : ''}
       </section>
       <section class="pane inj">
         <h2>injury report</h2>
