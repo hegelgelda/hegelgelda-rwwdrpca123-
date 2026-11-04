@@ -2388,10 +2388,111 @@ async function renderGame(gid) {
   };
 }
 
+/* ----------------------------------------------------------- プロップ
+   Pinnacle のプレイヤープロップ。`props.json` は PC 側の
+   `fetch_props.py` が任意のタイミングで作る（定期更新ではない）。
+   ★ Pinnacle は 1 選手 1 ライン（alternate を出さない）ので市場を列にした表に
+     畳める。US のブックを混ぜるとラダーが来るのでセルに複数行並ぶ。
+   ★ JSON が無い段階でも落ちないこと。取得前は案内だけ出す。 */
+
+const TIP_ET = new Intl.DateTimeFormat('en-US', {
+  timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+const TIP_JST = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo', month: 'numeric', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', hour12: false });
+const DAY_ET = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/New_York', month: '2-digit', day: '2-digit' });
+
+const propsCell = (arr, labels) => {
+  if (!arr || !arr.length) return '<span class="dim">—</span>';
+  /* ラインが大きい順。Pinnacle なら 1 本しかない */
+  return arr.slice().sort((a, b) => (a.pt ?? 0) - (b.pt ?? 0)).map((l) => {
+    const am = (v) => (v === null || v === undefined)
+      ? '—' : (v > 0 ? `+${v}` : `${v}`);
+    const p = (l.p === null || l.p === undefined)
+      ? '' : `<span class="pdv">${(l.p * 100).toFixed(1)}%</span>`;
+    return `<span class="pl"><b>${l.pt === null || l.pt === undefined
+      ? '—' : Number(l.pt).toFixed(1)}</b>${p}
+      <span class="po">${am(l.o)} / ${am(l.u)}</span></span>`;
+  }).join('');
+};
+
+async function renderProps() {
+  let d = null;
+  try {
+    d = await load('props');
+  } catch (e) {
+    d = null;
+  }
+  const how = `<p class="sub">取得はこの PC のコマンド 1 本。
+    <code>python fetch_props.py</code>（見積もりだけなら
+    <code>--dry-run</code>、今夜の試合だけなら <code>--within-hours 12</code>）。
+    叩くと VPS が The Odds API を呼び、<code>nba_live.duckdb</code> の
+    <code>props_line</code> に貯めてから、ここに出る JSON を作り直す。
+    <strong>サイトのボタンにはできない</strong>：公開リポジトリの静的サイトなので
+    API の鍵を置けず、書き込み先のサーバも無い。</p>`;
+  const lat = d && d.latest;
+  if (!lat || !lat.games || !lat.games.length) {
+    view.innerHTML = `<h1>プレイヤープロップ</h1>
+      <p class="empty">まだ取得していない。</p>${how}`;
+    return;
+  }
+  const labels = d.labels || {};
+  const fetched = new Date(lat.fetched_at_utc);
+
+  const games = lat.games.map((g) => {
+    const tip = g.tip_utc ? new Date(g.tip_utc) : null;
+    const lead = tip ? (tip - fetched) / 3600000 : null;
+    const mks = g.markets || [];
+    const head = mks.map((m) => `<th class="n">${esc(labels[m] || m)}</th>`).join('');
+    const body = (g.players || []).map((p) => `<tr>
+      <td>${p.person_id ? `<a href="#/p/${p.person_id}">${esc(p.name)}</a>`
+        : esc(p.name)}</td>
+      ${mks.map((m) => `<td class="n pcell">${
+        propsCell((p.lines || {})[m], labels)}</td>`).join('')}
+    </tr>`).join('');
+    return `<section class="propgame">
+      <h2><a href="#/team/${esc(g.away)}">${esc(g.away)}</a>
+        <span class="at">＠</span>
+        <a href="#/team/${esc(g.home)}">${esc(g.home)}</a>
+        <span class="dim">${tip ? `${DAY_ET.format(tip)} ${TIP_ET.format(tip)} ET
+          ・${TIP_JST.format(tip)} JST` : ''}</span>
+        ${lead === null ? '' : (lead > 0
+          ? `<span class="lead">ティップの ${lead.toFixed(1)} 時間前</span>`
+          : '<span class="lead late">ティップ後</span>')}</h2>
+      <div class="wrap"><table class="career props">
+        <thead><tr><th>選手</th>${head}</tr></thead>
+        <tbody>${body}</tbody></table></div>
+    </section>`;
+  }).join('');
+
+  const hist = (d.snapshots || []).slice(0, 12).map((s) => `<li>${
+    esc(s.fetched_at_utc.replace('T', ' ').slice(0, 16))} UTC
+    <span class="dim">${s.n_rows} 行</span></li>`).join('');
+
+  view.innerHTML = `<h1>プレイヤープロップ</h1>
+    <p class="sub"><strong>取得 ${esc(lat.fetched_at_utc.replace('T', ' ')
+      .slice(0, 16))} UTC</strong>
+      ・ブック ${esc((lat.books || []).join(', '))}
+      ・${lat.games.length} 試合 ・${lat.n_rows} 行
+      ${lat.hold_median === null || lat.hold_median === undefined ? ''
+        : `・hold 中央 ${(lat.hold_median * 100).toFixed(2)}%`}</p>
+    <p class="sub">各セルは <b>ライン</b>・<span class="pdv">de-vig した over 確率</span>・
+      <span class="po">Over / Under のアメリカンオッズ</span>。
+      de-vig は両側の implied を足して 1 に正規化したもの。
+      ★ <strong>Pinnacle のプロップの hold は実測で 7.0%（片側 3.5%）</strong>で、
+      研究が閾値に使っている 2.4%（-110/-110 相当）より重い。
+      ★ Pinnacle は <strong>1 選手 1 ライン</strong>（ラダーを出さない）。</p>
+    ${games}
+    <h2>取得の履歴</h2>
+    <ul class="snaps">${hist}</ul>
+    ${how}`;
+}
+
 async function route() {
   const parts = location.hash.replace(/^#\/?/, '').split('/').filter(Boolean);
   const nav = { schedule: 'on', standings: '', teams: '', players: '',
-                market: '', notes: '', reports: '' };
+                market: '', props: '', notes: '', reports: '' };
   try {
     view.innerHTML = '<p class="loading">読み込み中…</p>';
     if (parts[0] === 'notes') {
@@ -2400,6 +2501,9 @@ async function route() {
     } else if (parts[0] === 'market') {
       nav.schedule = ''; nav.market = 'on';
       await renderMarket();
+    } else if (parts[0] === 'props') {
+      nav.schedule = ''; nav.props = 'on';
+      await renderProps();
     } else if (parts[0] === 'standings') {
       nav.schedule = ''; nav.standings = 'on';
       await renderStandings();

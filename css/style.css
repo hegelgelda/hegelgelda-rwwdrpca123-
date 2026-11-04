@@ -846,3 +846,34 @@ a.booklink {
   margin-left: 8px; vertical-align: 1px;
 }
 a.booklink:hover { background: var(--accent-soft); text-decoration: none; }
+
+/* ---------------------------------------------------------- プロップ
+   #/props。Pinnacle は 1 選手 1 ライン なので市場を列にした表に畳む。
+   ★ セルは「ライン / de-vig 確率 / 両側のオッズ」の 3 段。白地に数字を
+     並べるだけだと読めないので、確率だけ色を付けて視線の止まる場所を作る。
+   ★ `.wrap` の中だけ横スクロールさせる（`section` に min-width: 0 が
+     無いと、中の広い表がページごと横に広げる。順位ページで踏んだ罠と同じ） */
+.propgame { margin: 0 0 26px; min-width: 0; }
+.propgame h2 { display: flex; align-items: baseline; flex-wrap: wrap; gap: 10px; }
+.propgame h2 .dim { font-size: 12px; font-weight: 400; }
+.lead {
+  font-size: 11px; font-weight: 600; padding: 1px 8px; border-radius: 999px;
+  border: 1px solid var(--line); color: var(--muted);
+}
+.lead.late { border-color: var(--warn); color: var(--warn); }
+
+table.props td.pcell { vertical-align: top; }
+table.props .pl { display: block; line-height: 1.35; }
+table.props .pl + .pl { margin-top: 4px; border-top: 1px dotted var(--line); }
+table.props .pl b { font-size: 14px; font-variant-numeric: tabular-nums; }
+table.props .pdv {
+  margin-left: 6px; font-size: 11px; font-weight: 600; color: var(--accent);
+}
+table.props .po { display: block; font-size: 11px; color: var(--muted); }
+
+ul.snaps { list-style: none; padding: 0; margin: 0 0 18px; font-size: 13px; }
+ul.snaps li { padding: 2px 0; font-variant-numeric: tabular-nums; }
+.sub code {
+  font: 12px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--accent-soft); border-radius: 4px; padding: 1px 5px;
+}
