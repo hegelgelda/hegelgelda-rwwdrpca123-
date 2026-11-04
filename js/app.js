@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'ba07bc39';
+const DATA_V = '95b59108';
 const view = document.getElementById('view');
 
 /* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
@@ -1829,14 +1829,21 @@ async function renderReports() {
     <ul class="reports">
       ${rows.map((r) => `
         <li>
-          <a href="#/report/${esc(r.day)}">${esc(r.day)}</a>
+          <a href="#/report/${esc(r.day)}">${esc(repName(r.day))}</a>
           ${r.summary ? `<span class="sub">${esc(r.summary)}</span>` : ''}
         </li>`).join('')}
     </ul>`;
 }
 
+/* 速報（`2026-11-04-first`）は確定版と別ファイル。一覧の見出しに出す名前 */
+const repName = (day) => (day.endsWith('-first')
+  ? `${day.slice(0, 10)} 速報` : day);
+
 async function renderReport(day) {
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) {
+  /* ★ 速報は `YYYY-MM-DD-first`。ここを `YYYY-MM-DD` だけにすると
+     **速報を開いたときに「日付が不正」になる**（2026-11-04 に出た）。
+     JSON も一覧も出来ていて、この検査だけが弾いていた */
+  if (!/^\d{4}-\d{2}-\d{2}(-first)?$/.test(day)) {
     view.innerHTML = '<p class="err">日付が不正。</p>';
     return;
   }
