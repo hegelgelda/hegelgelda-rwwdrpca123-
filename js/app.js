@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '0d054741';
+const DATA_V = '8a2146e8';
 const view = document.getElementById('view');
 
 /* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
@@ -2428,11 +2428,12 @@ async function renderProps() {
   } catch (e) {
     d = null;
   }
-  const how = `<p class="sub">取得はこの PC のコマンド 1 本。
-    <code>python fetch_props.py</code>（見積もりだけなら
-    <code>--dry-run</code>、今夜の試合だけなら <code>--within-hours 12</code>）。
-    叩くと VPS が The Odds API を呼び、<code>nba_live.duckdb</code> の
-    <code>props_line</code> に貯めてから、ここに出る JSON を作り直す。
+  const how = `<p class="sub">定期収集は VPS が
+    <strong>ティップの 10 時間前から</strong>、近づくほど細かく
+    （30分 → 10分 → 5分）取る。injury report で status が動いた試合は
+    その場で臨時に取る。手で取るなら PC で <code>python fetch_props.py</code>。
+    ここに出るのは<strong>いまの板だけ</strong>で、推移は
+    <code>props_line</code> に全部残してある。
     <strong>サイトのボタンにはできない</strong>：公開リポジトリの静的サイトなので
     API の鍵を置けず、書き込み先のサーバも無い。</p>`;
   const lat = d && d.latest;
@@ -2446,7 +2447,12 @@ async function renderProps() {
 
   const games = lat.games.map((g) => {
     const tip = g.tip_utc ? new Date(g.tip_utc) : null;
-    const lead = tip ? (tip - fetched) / 3600000 : null;
+    /* ★ 試合ごとに取得時刻が違う（刻み表が試合ごとに回る）。全体の時刻で
+       lead を計算すると、先に取った試合の板が新しく見えてしまう。 */
+    const gf = g.fetched_at_utc ? new Date(g.fetched_at_utc) : fetched;
+    const lead = (g.lead_min !== null && g.lead_min !== undefined)
+      ? g.lead_min / 60 : (tip ? (tip - gf) / 3600000 : null);
+    const age = (Date.now() - gf) / 60000;
     const mks = g.markets || [];
     const head = mks.map((m) => `<th class="n">${esc(labels[m] || m)}</th>`).join('');
     const body = (g.players || []).map((p) => `<tr>
@@ -2462,8 +2468,11 @@ async function renderProps() {
         <span class="dim">${tip ? `${DAY_ET.format(tip)} ${TIP_ET.format(tip)} ET
           ・${TIP_JST.format(tip)} JST` : ''}</span>
         ${lead === null ? '' : (lead > 0
-          ? `<span class="lead">ティップの ${lead.toFixed(1)} 時間前</span>`
-          : '<span class="lead late">ティップ後</span>')}</h2>
+          ? `<span class="lead">ティップの ${lead.toFixed(1)} 時間前の板</span>`
+          : '<span class="lead late">ティップ後</span>')}
+        ${isFinite(age) ? `<span class="dim">${age < 90
+          ? `${Math.round(age)} 分前に取得` : `${(age / 60).toFixed(1)} 時間前に取得`
+        }</span>` : ''}</h2>
       <div class="wrap"><table class="career props">
         <thead><tr><th>選手</th>${head}</tr></thead>
         <tbody>${body}</tbody></table></div>
