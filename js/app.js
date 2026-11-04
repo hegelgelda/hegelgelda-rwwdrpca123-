@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = '688d3a59';
+const DATA_V = '0d054741';
 const view = document.getElementById('view');
 
 /* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
@@ -2403,18 +2403,22 @@ const TIP_JST = new Intl.DateTimeFormat('ja-JP', {
 const DAY_ET = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/New_York', month: '2-digit', day: '2-digit' });
 
+/* アメリカン -> デシマル。+150 なら 2.50、-110 なら 1.91。
+   ★ 小数2桁で丸める。1.909090… を 1.9 と書くと -111 と区別が付かない。 */
+const dec = (v) => {
+  if (v === null || v === undefined) return '—';
+  const a = Number(v);
+  if (!isFinite(a) || a === 0) return '—';
+  return (a > 0 ? 1 + a / 100 : 1 + 100 / -a).toFixed(2);
+};
+
 const propsCell = (arr, labels) => {
   if (!arr || !arr.length) return '<span class="dim">—</span>';
   /* ラインが大きい順。Pinnacle なら 1 本しかない */
-  return arr.slice().sort((a, b) => (a.pt ?? 0) - (b.pt ?? 0)).map((l) => {
-    const am = (v) => (v === null || v === undefined)
-      ? '—' : (v > 0 ? `+${v}` : `${v}`);
-    const p = (l.p === null || l.p === undefined)
-      ? '' : `<span class="pdv">${(l.p * 100).toFixed(1)}%</span>`;
-    return `<span class="pl"><b>${l.pt === null || l.pt === undefined
-      ? '—' : Number(l.pt).toFixed(1)}</b>${p}
-      <span class="po">${am(l.o)} / ${am(l.u)}</span></span>`;
-  }).join('');
+  return arr.slice().sort((a, b) => (a.pt ?? 0) - (b.pt ?? 0)).map((l) => `<span
+    class="pl"><b>${l.pt === null || l.pt === undefined
+      ? '—' : Number(l.pt).toFixed(1)}</b><span class="po">(${
+      dec(l.o)} / ${dec(l.u)})</span></span>`).join('');
 };
 
 async function renderProps() {
@@ -2477,9 +2481,8 @@ async function renderProps() {
       ・${lat.games.length} 試合 ・${lat.n_rows} 行
       ${lat.hold_median === null || lat.hold_median === undefined ? ''
         : `・hold 中央 ${(lat.hold_median * 100).toFixed(2)}%`}</p>
-    <p class="sub">各セルは <b>ライン</b>・<span class="pdv">de-vig した over 確率</span>・
-      <span class="po">Over / Under のアメリカンオッズ</span>。
-      de-vig は両側の implied を足して 1 に正規化したもの。
+    <p class="sub">各セルは <b>ライン</b> と
+      <span class="po">(Over / Under のデシマルオッズ)</span>。
       ★ <strong>Pinnacle のプロップの hold は実測で 7.0%（片側 3.5%）</strong>で、
       研究が閾値に使っている 2.4%（-110/-110 相当）より重い。
       ★ Pinnacle は <strong>1 選手 1 ライン</strong>（ラダーを出さない）。</p>
