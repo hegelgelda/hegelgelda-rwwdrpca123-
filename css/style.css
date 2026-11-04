@@ -849,8 +849,8 @@ a.booklink:hover { background: var(--accent-soft); text-decoration: none; }
 
 /* ---------------------------------------------------------- プロップ
    #/props。Pinnacle は 1 選手 1 ライン なので市場を列にした表に畳む。
-   ★ セルは「ライン (Over / Under のデシマルオッズ)」の 1 行。ラインだけ
-     大きくして、括弧の中は小さく muted にして視線の止まる場所を作る。
+   ★ セルは「ライン (Over / Under のデシマルオッズ)」の 1 行。**オッズを
+     大きく**、ラインは小さく muted にする（2026-11-05 に入れ替えた）。
    ★ `.wrap` の中だけ横スクロールさせる（`section` に min-width: 0 が
      無いと、中の広い表がページごと横に広げる。順位ページで踏んだ罠と同じ） */
 .propgame { margin: 0 0 26px; min-width: 0; }
@@ -865,9 +865,12 @@ a.booklink:hover { background: var(--accent-soft); text-decoration: none; }
 table.props td.pcell { vertical-align: top; }
 table.props .pl { display: block; line-height: 1.35; }
 table.props .pl + .pl { margin-top: 4px; border-top: 1px dotted var(--line); }
-table.props .pl b { font-size: 14px; font-variant-numeric: tabular-nums; }
+table.props .pl b {
+  font-size: 11px; font-weight: 400; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
 table.props .po {
-  margin-left: 5px; font-size: 11px; color: var(--muted);
+  margin-left: 5px; font-size: 14px; font-weight: 700;
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
