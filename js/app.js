@@ -2429,9 +2429,10 @@ async function renderProps() {
     d = null;
   }
   const how = `<p class="sub">定期収集は VPS が
-    <strong>ティップの 10 時間前から</strong>、近づくほど細かく
-    （30分 → 10分 → 5分）取る。injury report で status が動いた試合は
-    その場で臨時に取る。手で取るなら PC で <code>python fetch_props.py</code>。
+    <strong>ティップの 10 時間前から 1 試合 10 回</strong>、近づくほど細かく
+    （90分間隔 → 30分間隔、最後は 5 分前）取る。injury report で status が
+    動いた試合は次の回を前倒しする。手で取るなら PC で
+    <code>python fetch_props.py</code>。
     ここに出るのは<strong>いまの板だけ</strong>で、推移は
     <code>props_line</code> に全部残してある。
     <strong>サイトのボタンにはできない</strong>：公開リポジトリの静的サイトなので
