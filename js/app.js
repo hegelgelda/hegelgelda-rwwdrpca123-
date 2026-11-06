@@ -1581,6 +1581,9 @@ function ddiNote(dd) {
    p は得点でも 1 未満なので、分を試行とする二項分布が成り立つ。 */
 const STATS = [
   { k: 'pts', label: '得点' },
+  /* ★ 3P は **成功数**（tpm）。試投（tpa）ではない。
+     1本ずつ増える量なので、1分1回の試行という前提にはよく合う。 */
+  { k: 'tpm', label: '3P 成功' },
   { k: 'ast', label: 'アシスト' },
   { k: 'reb', label: 'リバウンド' },
 ];
@@ -1694,6 +1697,12 @@ function statBlock(car, st, mp) {
 
 /* MP を変えたときに作り直すのはこの中だけ */
 function modelInner(car, mp) {
+  /* ★ 率が 0 の項目は図を出さない。二項分布に p = 0 を入れると
+     「0 以外は起こらない」という分布になり、over が 0% と出る。
+     3P は該当が多い（記録のある選手の 1 割強が直近3季で 0 本）。 */
+  const ok = (st) => Number.isFinite(car.r3[st.k]) && car.r3[st.k] > 0;
+  const live = STATS.filter(ok);
+  const dead = STATS.filter((st) => !ok(st));
   return `<div class="mpbar">
       <button data-mp="-5">−5</button>
       <button data-mp="-1">−1</button>
@@ -1703,7 +1712,13 @@ function modelInner(car, mp) {
       <span class="now"><strong>${mp}</strong> 分</span>
       <button data-mp="reset" class="today">30 分に戻す</button>
     </div>
-    ${STATS.map((st) => statBlock(car, st, mp)).join('')}`;
+    ${live.map((st) => statBlock(car, st, mp)).join('')}
+    ${!dead.length ? '' : `<p class="sub">★ ${dead.map((st) => esc(st.label))
+      .join('・')}は、この期間（${esc(car.r3.label)}）の記録が
+      <strong>0</strong> なので出していない。
+      率を 0 と置くと「絶対に記録しない」という分布になり、
+      <strong>over が 0% と出てしまう</strong>（実際は小さいだけで 0 ではない）。
+      それより古い季に記録があるかは、上のシーズン別の表を見ること。</p>`}`;
 }
 
 let curPlayer = null;
@@ -1734,7 +1749,16 @@ function modelBlock(car) {
           ★ <strong>得点は2点・3点とまとまって入る</strong>ので、
           1分1回の試行に置き換えるとばらつきを小さく見積もる。
           得点の under 確率は実際より極端（0% / 100% 寄り）に出る。
-          アシストとリバウンドは1つずつ増えるので、この前提とよく合う。
+          <strong>3P 成功・アシスト・リバウンドは1つずつ増える</strong>ので、
+          この前提とよく合う。
+        </p>
+        <p>
+          ★ 3P は<strong>試投と成功率の積</strong>なので、
+          1分あたりの成功数だけを見ると
+          「打っていないのか、入っていないのか」が区別できない。
+          上のシーズン別の 3PA / 3P% と併せて見ること。
+          当たり外れが日によってまとまる（よく言われる「当たっている日」）ぶん、
+          実際のばらつきは二項分布より大きい。
         </p>
         <p>
           ★ 実際の試合は二項分布より<strong>ばらつきが大きい</strong>
