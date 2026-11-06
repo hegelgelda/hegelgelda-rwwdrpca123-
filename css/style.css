@@ -874,6 +874,43 @@ table.props .po {
   font-variant-numeric: tabular-nums; white-space: nowrap;
 }
 
+/* ----------------------------------------------------- プロップのカレンダー
+   #/props は日付を選ぶまで中身を出さない。記録のある日だけ押せる。
+   ★ 375px でも 7 列が入るように、セルは固定幅を持たせず table-layout: fixed。 */
+.pcal { margin: 0 0 22px; max-width: 420px; }
+.pcalhd {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin: 0 0 6px;
+}
+.pcalhd strong { font-size: 15px; font-variant-numeric: tabular-nums; }
+.pcalhd button {
+  font: inherit; line-height: 1; padding: 4px 10px; cursor: pointer;
+  color: var(--fg); background: var(--card); border: 1px solid var(--line);
+  border-radius: 6px;
+}
+.pcalhd button:hover { background: var(--accent-soft); }
+table.cal { width: 100%; table-layout: fixed; border-collapse: collapse; }
+table.cal th {
+  font-size: 11px; font-weight: 400; color: var(--muted);
+  padding: 2px 0; text-align: center;
+}
+table.cal td { border: 1px solid var(--line); padding: 0; height: 42px; }
+table.cal td.pad { border: 0; }
+.pday .dnum {
+  display: block; font-size: 13px; font-variant-numeric: tabular-nums;
+  text-align: center; padding-top: 4px;
+}
+.pday .dg {
+  display: block; font-size: 10px; color: var(--muted); text-align: center;
+}
+.pday a { display: block; height: 100%; text-decoration: none; color: var(--accent); }
+.pday a:hover { background: var(--accent-soft); }
+.pday.none { background: var(--card); }
+.pday.none .dnum { color: var(--muted); }
+/* 選んでいる日。枠を太くするのではなく地を塗る（枠だと隣とずれて見える） */
+.pday.sel { background: var(--accent-soft); }
+.pday.sel .dnum { font-weight: 700; }
+
 ul.snaps { list-style: none; padding: 0; margin: 0 0 18px; font-size: 13px; }
 ul.snaps li { padding: 2px 0; font-variant-numeric: tabular-nums; }
 .sub code {

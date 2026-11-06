@@ -14,7 +14,7 @@ const DATA = './public/data1';
 /* public/data1/ の中身のハッシュ。tools/stamp_assets.py が書き換える。
    これが無いと、JSON を作り直しても GitHub Pages の 10 分キャッシュに
    邪魔されて古いデータが使われ続ける（新しい列が抜けて見える） */
-const DATA_V = 'c8864372';
+const DATA_V = 'fc1701f6';
 const view = document.getElementById('view');
 
 /* ---- 板と odds の図（Cloudflare Pages。C:\polymarket\scripts\book_viz が毎時作って上げる） ----
@@ -2421,85 +2421,204 @@ const propsCell = (arr, labels) => {
       dec(l.o)} / ${dec(l.u)})</span></span>`).join('');
 };
 
-async function renderProps() {
-  let d = null;
-  try {
-    d = await load('props');
-  } catch (e) {
-    d = null;
+/* 月の表示。カレンダーの見出しと移動に使う */
+const MONTH_JA = (ym) => {
+  const [y, m] = ym.split('-');
+  return y + ' 年 ' + Number(m) + ' 月';
+};
+const ymOf = (d) => d.slice(0, 7);
+const addMonth = (ym, n) => {
+  const [y, m] = ym.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1 + n, 1));
+  return t.getUTCFullYear() + '-' + String(t.getUTCMonth() + 1).padStart(2, '0');
+};
+
+/* 最終更新の書き方。JST と UTC を並べる。
+   ★ 「取得時刻」ではなく「最終更新」と呼ぶ。その日の板のうち一番新しい回。 */
+const UPD_JST = new Intl.DateTimeFormat('ja-JP', {
+  timeZone: 'Asia/Tokyo', year: 'numeric', month: 'numeric', day: 'numeric',
+  hour: '2-digit', minute: '2-digit', hour12: false });
+const updText = (iso) => {
+  if (!iso) return '最終更新 不明';
+  const t = new Date(iso);
+  const age = (Date.now() - t) / 60000;
+  const ago = !isFinite(age) ? '' : (age < 90
+    ? ' （' + Math.round(age) + ' 分前）'
+    : (age < 48 * 60 ? ' （' + (age / 60).toFixed(1) + ' 時間前）'
+      : ' （' + Math.round(age / 1440) + ' 日前）'));
+  return '最終更新 ' + UPD_JST.format(t) + ' JST / '
+    + iso.replace('T', ' ').slice(0, 16) + ' UTC' + ago;
+};
+
+/* 覚えておく表示月。ハッシュには入れない（日付を選ぶのが主役なので） */
+let PROPS_MONTH = null;
+
+/* カレンダー。データのある日だけリンクにする。 */
+function propsCalendar(ixMap, ym, sel) {
+  const [y, m] = ym.split('-').map(Number);
+  const first = new Date(Date.UTC(y, m - 1, 1));
+  const days = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const lead = first.getUTCDay();
+  const cells = [];
+  for (let i = 0; i < lead; i += 1) cells.push('<td class="pad"></td>');
+  for (let d = 1; d <= days; d += 1) {
+    const iso = ym + '-' + String(d).padStart(2, '0');
+    const row = ixMap[iso];
+    const cls = ['pday'];
+    if (iso === sel) cls.push('sel');
+    if (!row) cls.push('none');
+    const inner = row
+      ? '<a href="#/props/' + iso + '"><span class="dnum">' + d + '</span>'
+        + '<span class="dg">' + row.games + ' 試合</span></a>'
+      : '<span class="dnum">' + d + '</span>';
+    cells.push('<td class="' + cls.join(' ') + '">' + inner + '</td>');
   }
-  const how = `<p class="sub">定期収集は VPS が
-    <strong>ティップの 10 時間前から 1 試合 10 回</strong>、近づくほど細かく
-    （90分間隔 → 30分間隔、最後は 5 分前）取る。injury report で status が
-    動いた試合は次の回を前倒しする。手で取るなら PC で
-    <code>python fetch_props.py</code>。
-    ここに出るのは<strong>いまの板だけ</strong>で、推移は
-    <code>props_line</code> に全部残してある。
-    <strong>サイトのボタンにはできない</strong>：公開リポジトリの静的サイトなので
-    API の鍵を置けず、書き込み先のサーバも無い。</p>`;
-  const lat = d && d.latest;
-  if (!lat || !lat.games || !lat.games.length) {
-    view.innerHTML = `<h1>プレイヤープロップ</h1>
-      <p class="empty">まだ取得していない。</p>${how}`;
+  while (cells.length % 7 !== 0) cells.push('<td class="pad"></td>');
+  const weeks = [];
+  for (let i = 0; i < cells.length; i += 7) {
+    weeks.push('<tr>' + cells.slice(i, i + 7).join('') + '</tr>');
+  }
+  const names = ['日', '月', '火', '水', '木', '金', '土'];
+  return '<div class="pcal">'
+    + '<div class="pcalhd">'
+    + '<button id="pprev" type="button">◀</button>'
+    + '<strong>' + MONTH_JA(ym) + '</strong>'
+    + '<button id="pnext" type="button">▶</button>'
+    + '</div>'
+    + '<table class="cal"><thead><tr>'
+    + names.map((n) => '<th>' + n + '</th>').join('')
+    + '</tr></thead><tbody>' + weeks.join('') + '</tbody></table></div>';
+}
+
+/* カレンダーの月送り。ハッシュを変えずに描き替える（選んだ日は保つ） */
+function wireCal(ixMap, ym, sel) {
+  const go = (n) => {
+    const next = addMonth(ym, n);
+    PROPS_MONTH = next;
+    const host = view.querySelector('.pcal');
+    if (!host) return;
+    host.outerHTML = propsCalendar(ixMap, next, sel);
+    wireCal(ixMap, next, sel);
+  };
+  const prev = view.querySelector('#pprev');
+  const nxt = view.querySelector('#pnext');
+  if (prev) prev.onclick = () => go(-1);
+  if (nxt) nxt.onclick = () => go(1);
+}
+
+async function renderProps(day) {
+  const how = '<p class="sub">収集は VPS が'
+    + ' <strong>ティップの 10 時間前から 1 試合 10 回</strong>、近づくほど細かく'
+    + '（90分間隔 → 30分間隔、最後は 5 分前）取る。injury report で status が'
+    + '動いた試合は次の回を前倒しする。サイトへの貼り直しは PC の'
+    + ' <code>NBA_Props_Publish</code>（30 分おき）。'
+    + '過去の日付を作り直すなら'
+    + ' <code>python fetch_props.py --export-only --all-dates</code>。'
+    + '<strong>サイトのボタンにはできない</strong>：公開リポジトリの静的サイトなので'
+    + 'API の鍵を置けず、書き込み先のサーバも無い。</p>';
+
+  let ix = null;
+  try {
+    ix = await load('props/index');
+  } catch (e) {
+    ix = null;
+  }
+  const dates = (ix && ix.dates) || [];
+  if (!dates.length) {
+    view.innerHTML = '<h1>プレイヤープロップ</h1>'
+      + '<p class="empty">まだ取得していない。</p>' + how;
     return;
   }
-  const labels = d.labels || {};
-  const fetched = new Date(lat.fetched_at_utc);
+  const ixMap = Object.fromEntries(dates.map((r) => [r.d, r]));
+  const newest = dates[dates.length - 1].d;
+  if (day && !ixMap[day]) {
+    PROPS_MONTH = ymOf(newest);
+    view.innerHTML = '<h1>プレイヤープロップ</h1>'
+      + '<p class="empty">' + esc(day) + ' の板は無い。</p>'
+      + propsCalendar(ixMap, PROPS_MONTH, null) + how;
+    wireCal(ixMap, PROPS_MONTH, null);
+    return;
+  }
+  PROPS_MONTH = ymOf(day || newest);
 
-  const games = lat.games.map((g) => {
+  /* ★ 日付を選ぶまで中身は出さない。カレンダーと目次だけ。 */
+  if (!day) {
+    const list = dates.slice().reverse().slice(0, 14).map((r) => '<li>'
+      + '<a href="#/props/' + r.d + '">' + r.d + '</a> <span class="dim">'
+      + r.games + ' 試合 ・' + r.rows + ' 行 ・'
+      + esc(updText(r.last_update_utc)) + '</span></li>').join('');
+    view.innerHTML = '<h1>プレイヤープロップ</h1>'
+      + '<p class="sub">日付を選ぶと、その日の板を出す。'
+      + '<strong>記録のある日だけ</strong>が押せる（全 ' + dates.length + ' 日）。</p>'
+      + propsCalendar(ixMap, PROPS_MONTH, null)
+      + '<h2>最近の日付</h2><ul class="snaps">' + list + '</ul>'
+      + how;
+    wireCal(ixMap, PROPS_MONTH, null);
+    return;
+  }
+
+  let b = null;
+  try {
+    b = await load('props/' + day);
+  } catch (e) {
+    b = null;
+  }
+  if (!b || !(b.games || []).length) {
+    view.innerHTML = '<h1>プレイヤープロップ</h1>'
+      + '<p class="empty">' + esc(day) + ' の板が読めない。</p>'
+      + propsCalendar(ixMap, PROPS_MONTH, day) + how;
+    wireCal(ixMap, PROPS_MONTH, day);
+    return;
+  }
+  const labels = (ix && ix.labels) || {};
+
+  const games = (b.games || []).map((g) => {
     const tip = g.tip_utc ? new Date(g.tip_utc) : null;
     /* ★ 試合ごとに取得時刻が違う（刻み表が試合ごとに回る）。全体の時刻で
        lead を計算すると、先に取った試合の板が新しく見えてしまう。 */
-    const gf = g.fetched_at_utc ? new Date(g.fetched_at_utc) : fetched;
+    const gf = g.fetched_at_utc ? new Date(g.fetched_at_utc) : null;
     const lead = (g.lead_min !== null && g.lead_min !== undefined)
-      ? g.lead_min / 60 : (tip ? (tip - gf) / 3600000 : null);
-    const age = (Date.now() - gf) / 60000;
+      ? g.lead_min / 60 : ((tip && gf) ? (tip - gf) / 3600000 : null);
     const mks = g.markets || [];
-    const head = mks.map((m) => `<th class="n">${esc(labels[m] || m)}</th>`).join('');
-    const body = (g.players || []).map((p) => `<tr>
-      <td>${p.person_id ? `<a href="#/p/${p.person_id}">${esc(p.name)}</a>`
-        : esc(p.name)}</td>
-      ${mks.map((m) => `<td class="n pcell">${
-        propsCell((p.lines || {})[m], labels)}</td>`).join('')}
-    </tr>`).join('');
-    return `<section class="propgame">
-      <h2><a href="#/team/${esc(g.away)}">${esc(g.away)}</a>
-        <span class="at">＠</span>
-        <a href="#/team/${esc(g.home)}">${esc(g.home)}</a>
-        <span class="dim">${tip ? `${DAY_ET.format(tip)} ${TIP_ET.format(tip)} ET
-          ・${TIP_JST.format(tip)} JST` : ''}</span>
-        ${lead === null ? '' : (lead > 0
-          ? `<span class="lead">ティップの ${lead.toFixed(1)} 時間前の板</span>`
-          : '<span class="lead late">ティップ後</span>')}
-        ${isFinite(age) ? `<span class="dim">${age < 90
-          ? `${Math.round(age)} 分前に取得` : `${(age / 60).toFixed(1)} 時間前に取得`
-        }</span>` : ''}</h2>
-      <div class="wrap"><table class="career props">
-        <thead><tr><th>選手</th>${head}</tr></thead>
-        <tbody>${body}</tbody></table></div>
-    </section>`;
+    const head = mks.map((m) => '<th class="n">' + esc(labels[m] || m)
+      + '</th>').join('');
+    const body = (g.players || []).map((pp) => '<tr><td>'
+      + (pp.person_id ? '<a href="#/p/' + pp.person_id + '">' + esc(pp.name) + '</a>'
+        : esc(pp.name)) + '</td>'
+      + mks.map((m) => '<td class="n pcell">'
+        + propsCell((pp.lines || {})[m], labels) + '</td>').join('')
+      + '</tr>').join('');
+    return '<section class="propgame"><h2>'
+      + '<a href="#/team/' + esc(g.away) + '">' + esc(g.away) + '</a>'
+      + '<span class="at">＠</span>'
+      + '<a href="#/team/' + esc(g.home) + '">' + esc(g.home) + '</a>'
+      + (tip ? '<span class="dim">' + DAY_ET.format(tip) + ' ' + TIP_ET.format(tip)
+        + ' ET ・' + TIP_JST.format(tip) + ' JST</span>' : '')
+      + (lead === null ? '' : (lead > 0
+        ? '<span class="lead">ティップの ' + lead.toFixed(1) + ' 時間前の板</span>'
+        : '<span class="lead late">ティップ後</span>'))
+      + (gf ? '<span class="dim">' + esc(updText(g.fetched_at_utc)) + '</span>' : '')
+      + '</h2><div class="wrap"><table class="career props">'
+      + '<thead><tr><th>選手</th>' + head + '</tr></thead>'
+      + '<tbody>' + body + '</tbody></table></div></section>';
   }).join('');
 
-  const hist = (d.snapshots || []).slice(0, 12).map((s) => `<li>${
-    esc(s.fetched_at_utc.replace('T', ' ').slice(0, 16))} UTC
-    <span class="dim">${s.n_rows} 行</span></li>`).join('');
-
-  view.innerHTML = `<h1>プレイヤープロップ</h1>
-    <p class="sub"><strong>取得 ${esc(lat.fetched_at_utc.replace('T', ' ')
-      .slice(0, 16))} UTC</strong>
-      ・ブック ${esc((lat.books || []).join(', '))}
-      ・${lat.games.length} 試合 ・${lat.n_rows} 行
-      ${lat.hold_median === null || lat.hold_median === undefined ? ''
-        : `・hold 中央 ${(lat.hold_median * 100).toFixed(2)}%`}</p>
-    <p class="sub">各セルは <b>ライン</b> と
-      <span class="po">(Over / Under のデシマルオッズ)</span>。
-      ★ <strong>Pinnacle のプロップの hold は実測で 7.0%（片側 3.5%）</strong>で、
-      研究が閾値に使っている 2.4%（-110/-110 相当）より重い。
-      ★ Pinnacle は <strong>1 選手 1 ライン</strong>（ラダーを出さない）。</p>
-    ${games}
-    <h2>取得の履歴</h2>
-    <ul class="snaps">${hist}</ul>
-    ${how}`;
+  view.innerHTML = '<h1>プレイヤープロップ <span class="dim">' + esc(day)
+    + '</span></h1>'
+    + '<p class="sub"><strong>' + esc(updText(b.last_update_utc)) + '</strong>'
+    + ' ・ブック ' + esc((b.books || []).join(', '))
+    + ' ・' + (b.games || []).length + ' 試合 ・' + b.n_rows + ' 行'
+    + (b.hold_median === null || b.hold_median === undefined ? ''
+      : ' ・hold 中央 ' + (b.hold_median * 100).toFixed(2) + '%') + '</p>'
+    + '<p class="sub">各セルは <b>ライン</b> と'
+    + '<span class="po">(Over / Under のデシマルオッズ)</span>。'
+    + '★ <strong>Pinnacle のプロップの hold は実測で 7.0%（片側 3.5%）</strong>で、'
+    + '研究が閾値に使っている 2.4%（-110/-110 相当）より重い。'
+    + '★ Pinnacle は <strong>1 選手 1 ライン</strong>（ラダーを出さない）。</p>'
+    + propsCalendar(ixMap, PROPS_MONTH, day)
+    + games
+    + how;
+  wireCal(ixMap, PROPS_MONTH, day);
 }
 
 async function route() {
@@ -2515,8 +2634,9 @@ async function route() {
       nav.schedule = ''; nav.market = 'on';
       await renderMarket();
     } else if (parts[0] === 'props') {
+      /* #/props はカレンダーだけ。#/props/2026-11-06 でその日の板を出す */
       nav.schedule = ''; nav.props = 'on';
-      await renderProps();
+      await renderProps(parts[1] || null);
     } else if (parts[0] === 'standings') {
       nav.schedule = ''; nav.standings = 'on';
       await renderStandings();
